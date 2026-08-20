@@ -292,7 +292,11 @@ async function phase2(browser, site, port, screens) {
 // ---------------------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------------------
-/** Close the browser, but never hang on it: kill the process if it takes more than 5 s. */
+/**
+ * Close the browser, but never hang on it. A Chrome (channel build) that has been alive for
+ * more than ~15 s can take 10-50 s to shut down gracefully; after 5 s we give up and let
+ * Playwright's process-exit hook SIGKILL the browser process group when we call process.exit.
+ */
 async function closeBrowser(browser) {
   let done = false;
   await Promise.race([
@@ -301,10 +305,7 @@ async function closeBrowser(browser) {
     }),
     sleep(5_000),
   ]);
-  if (!done) {
-    console.error('validate_mermaid: browser did not close within 5 s; killing it');
-    browser.process()?.kill('SIGKILL');
-  }
+  if (!done && VERBOSE) console.error('browser did not close within 5 s; it is killed on exit');
 }
 
 async function main() {
