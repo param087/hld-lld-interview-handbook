@@ -124,6 +124,7 @@ nav:
       - hld/index.md
       - Fundamentals:
           - hld/fundamentals/index.md
+          - Partitioning, sharding and consistent hashing: hld/fundamentals/partitioning-and-consistent-hashing.md
       - Case studies:
           - hld/case-studies/index.md
           - Design a news feed: hld/case-studies/news-feed.md
@@ -133,6 +134,7 @@ nav:
           - lld/fundamentals/index.md
       - Design patterns:
           - lld/patterns/index.md
+          - Strategy: lld/patterns/strategy.md
       - Problems:
           - lld/problems/index.md
           - Design a parking lot: lld/problems/parking-lot.md
