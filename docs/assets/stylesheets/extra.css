@@ -1,0 +1,5 @@
+/* Slightly wider reading column and roomy diagrams. */
+.md-grid { max-width: 70rem; }
+.mermaid { text-align: center; }
+.md-typeset table:not([class]) { font-size: 0.72rem; }
+.md-typeset h2 { margin-top: 2.2em; }

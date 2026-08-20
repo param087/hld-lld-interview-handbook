@@ -1,0 +1,27 @@
+[project]
+name = "hld-lld-interview-handbook"
+version = "1.0.0"
+description = "HLD + LLD interview handbook: system design and low-level design with tested Python and Mermaid diagrams"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+managed = false
+
+[tool.pytest.ini_options]
+testpaths = ["code"]
+pythonpath = ["code"]
+norecursedirs = ["_templates", "_quarantine", ".venv", "site", ".build", "node_modules"]
+addopts = "-q -ra -p no:cacheprovider --timeout=30"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["code/_templates", "_quarantine", ".venv", "site", ".build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common", "hld", "lld", "patterns", "fundamentals"]
