@@ -12,7 +12,7 @@ managed = false
 testpaths = ["code"]
 pythonpath = ["code"]
 norecursedirs = ["_templates", "_quarantine", ".venv", "site", ".build", "node_modules"]
-addopts = "-q -ra -p no:cacheprovider --timeout=30"
+addopts = "-q -ra -p no:cacheprovider --timeout=30 --import-mode=importlib"
 
 [tool.ruff]
 line-length = 100
