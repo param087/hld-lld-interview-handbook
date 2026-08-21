@@ -277,7 +277,7 @@ Take the middle option and add a budget. A series is `(name, sorted label set)` 
 --8<-- "code/hld/tsdb_downsample.py:index"
 ```
 
-The arithmetic that makes this a crux: 10M series at ~2 KB of head block each is 20 GB of RAM held open across the shards. Add `user_id` with a million values to one metric and that metric alone becomes a million series per label combination it already had. The bill is not disk — compressed samples stay cheap — it is one open chunk per series in memory, one postings entry per label pair, and a query that merges a million postings lists before reading a sample.
+The arithmetic that makes this a crux: 10M series at ~2 KB of head block each is 20 GB of RAM held open. Add `user_id` with a million values to one metric and that metric alone becomes a million series per label combination it already had. The bill is not disk — compressed samples stay cheap — it is one open chunk per series in memory, one postings entry per label pair, and a query that merges a million postings lists before reading a sample.
 
 Four defences:
 
@@ -410,7 +410,7 @@ Delivery is at-least-once with an idempotency key per `(fingerprint, notificatio
 
 "Same fleet, now ship the logs." One ratio explains every difference: at 200k lines/s and ~500 B a line you move 100 MB/s, ~8.6 TB/day raw — **70x the 120 GB/day of metrics for the same hosts**.
 
-The pipeline rhymes: an agent per host tails files, attaches the same `service`, `host` and `env` labels and ships to Kafka; a parsing stage extracts fields, drops noise and bulk-indexes into a search cluster. An Elasticsearch data node indexes ~5k-10k docs/s, so 200k/s needs ~27 nodes, ~55 with one replica.
+The pipeline rhymes: an agent per host tails files, attaches the same `service`, `host` and `env` labels and ships to Kafka; a parsing stage extracts fields and bulk-indexes into a search cluster. An Elasticsearch data node indexes ~5k-10k docs/s, so 200k/s needs ~27 nodes, ~55 with one replica.
 
 What changes:
 

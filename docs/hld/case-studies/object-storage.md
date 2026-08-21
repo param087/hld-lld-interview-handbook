@@ -242,7 +242,7 @@ Split them because they have opposite shapes. Metadata is small (~1 KB a row), t
 
 The trade you must name is listing. Hashing the whole key spreads load perfectly but scatters `photos/2024/` across every shard, so bucket listings become scatter-gather; range-partitioning keeps a prefix contiguous but hot-spots on sequential keys such as timestamps. Real systems range-partition and split hot ranges automatically, which is why S3 no longer asks you to prefix keys with a random hash.
 
-Two more properties fall out of the split. Because blocks are immutable, the data plane needs no locks, no compaction and no consensus — a storage node is a disk with an RPC front end. And because a block id is meaningless without metadata, a stolen disk is not the data leak a stolen database dump is.
+Two more properties fall out of the split. Immutable blocks need no locks, no compaction and no consensus, so a storage node is a disk with an RPC front end. And a block id is meaningless without metadata, so a stolen disk is not the leak a stolen database dump is.
 
 ## Deep dive: durability with erasure coding, checksums and scrubbing
 
@@ -252,9 +252,9 @@ The probing question is "eleven nines — where does that number come from, and 
 |---|---|---|---|---|
 | 3 copies | 3.0x | 2 failures | Copy one whole object | Small objects, hot data, simple code |
 | (10,4) Reed-Solomon | 1.4x | 4 failures | Read 10 blocks to rebuild 1 | Large, warm objects: the default here |
-| (k, k+1) XOR parity | 1.33x at k=3 | 1 failure | Read k blocks | Teaching, and RAID-5 style volumes |
+| k data + 1 XOR parity | 1.33x at k=3 | 1 failure | Read k blocks | Teaching, and RAID-5 style volumes |
 
-Durability comes from three mechanisms together, and candidates usually name only the first. **Redundancy** (copies or parity) survives losses. **Checksums on every block** turn silent corruption into a detectable error rather than a wrong answer — a disk returning wrong bits is far more common than one that stops. **Scrubbing** reads every block on a schedule and rebuilds what fails, so damage is repaired in hours instead of accumulating until a second failure is fatal. Eleven nines is the arithmetic of "four tolerated failures per stripe" against "repair in hours", not a property of any one copy.
+Durability comes from three mechanisms together, and candidates usually name only the first. **Redundancy** (copies or parity) survives losses. **Checksums on every block** turn silent corruption into a detectable error — a disk returning wrong bits is far more common than one that stops. **Scrubbing** reads every block on a schedule and rebuilds what fails, so damage is repaired in hours instead of accumulating until a second failure is fatal. Eleven nines is the arithmetic of "four tolerated failures per stripe" against "repair in hours", not a property of any one copy.
 
 The module uses the smallest interesting code, `k` data blocks plus XOR parity, which makes reconstruction obvious: the missing block is the XOR of the survivors.
 
@@ -271,7 +271,7 @@ bit rot in a block    : checksum mismatch, scrub rebuilt ['obj-id-8']
 two blocks lost       : obj-id-8: 2 blocks lost, only one is recoverable
 ```
 
-Say the cost too: a degraded read must fetch `k` blocks to rebuild one, so a node failure multiplies read traffic across the cluster. That is why hot objects are often replicated, only cold ones coded, and repair throttled.
+The 1.38x is 1.33x plus padding on a tiny object. Say the cost too: a degraded read must fetch `k` blocks to rebuild one, so a node failure multiplies read traffic across the cluster. That is why hot objects are often replicated, only cold ones coded, and repair throttled.
 
 ## Deep dive: multipart upload
 
@@ -397,8 +397,8 @@ What breaks first, and what you do about it:
 - **Small objects.** A billion 10 KB objects cost the same metadata as a billion 10 MB ones but a thousandth of the bytes, so metadata becomes the bill. Pack them into larger blocks (Haystack and f4 do exactly this) and keep an offset in the metadata row.
 - **Repair storms.** Losing a node reconstructs every stripe it held, and with (10,4) each rebuild reads ten blocks. Throttle repair, prioritise the most degraded stripes, and spread blocks so no two share a failure domain.
 - **Listing a huge bucket.** A billion keys is not a page: `list` is paginated, bounded and never a database index. Anything queried by attribute needs a real index.
-- **Correlated failures.** A rack, a power domain or a bad firmware release can take out several blocks of one stripe at once, which is what actually breaks the durability arithmetic. Placement must be failure-domain aware, and rollouts staggered.
-- **The CDN, not the store, serves popularity.** One viral object at 100k requests/s would hammer the handful of nodes holding its blocks; cache it at the edge and the origin sees a trickle. Archive tiers, meanwhile, trade minutes or hours of retrieval latency for cost, so a lifecycle transition is a product decision rather than a default.
+- **Correlated failures.** A rack, a power domain or a bad firmware release can take out several blocks of one stripe at once, which is what breaks the durability arithmetic. Placement must be failure-domain aware, rollouts staggered.
+- **The CDN, not the store, serves popularity.** One viral object at 100k requests/s would hammer the handful of nodes holding its blocks; cache it at the edge and the origin sees a trickle. Archive tiers trade minutes or hours of retrieval latency for cost, so a lifecycle transition is a product decision, not a default.
 
 ## Trade-offs summary
 

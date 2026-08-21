@@ -76,6 +76,10 @@ class Partition:
             lambda: self._closed or self._has_room_locked(),
             timeout=self.retention.block_timeout,
         )
+        if self._closed:
+            # The wait also ends on close. Waking for that reason is not room:
+            # without this check a parked producer appends past max_messages.
+            raise BackpressureError(f"{self.topic}/{self.index} was closed while the producer waited")
         if not room:
             raise BackpressureError(
                 f"{self.topic}/{self.index} full ({self.retention.max_messages}) "

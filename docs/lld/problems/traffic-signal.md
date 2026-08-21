@@ -373,7 +373,7 @@ The heads have their own small lock because they are read from other threads, an
 
 ## Tests
 
-`tests/test_traffic_signal.py` has 11 cases. The two worth walking through are the ring test, which pins the exact stage sequence, and the safety test, which asserts the invariant on every tick of a run that includes a pedestrian call and an override:
+`tests/test_traffic_signal.py` has 13 cases. The two worth walking through are the ring test, which pins the exact stage sequence, and the safety test, which asserts the invariant on every tick of a run that includes a pedestrian call and an override:
 
 ```python title="code/lld/traffic_signal/tests/test_traffic_signal.py — the ring"
 --8<-- "code/lld/traffic_signal/tests/test_traffic_signal.py:cycle"
@@ -383,7 +383,7 @@ The heads have their own small lock because they are read from other threads, an
 --8<-- "code/lld/traffic_signal/tests/test_traffic_signal.py:safety"
 ```
 
-The concurrency test runs one thread ticking forty times while twenty-four threads press buttons, and asserts both that no tick ever saw conflicting greens and that no press was lost:
+The concurrency test runs one thread ticking forty times while twenty-four threads press buttons, and asserts that no tick ever saw conflicting greens and that all twenty-four presses reached the queue. Be honest about what it proves: the invariant survives because it is structural — a `Phase` cannot hold conflicting movements, and `_index` only moves while the stage is `ALL_RED` — so this test would still pass with the lock removed. It is a regression net over the whole machine, not evidence for the lock. What the lock actually buys is that a reader never sees a half-applied transition and that `enter_maintenance` cannot be overwritten by a tick already in flight; say that rather than claiming the mutex is what keeps the intersection safe.
 
 ```python title="code/lld/traffic_signal/tests/test_traffic_signal.py — presses under load"
 --8<-- "code/lld/traffic_signal/tests/test_traffic_signal.py:concurrency"

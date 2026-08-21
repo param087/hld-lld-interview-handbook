@@ -57,7 +57,8 @@ class Document:
         self.history = CommandHistory(history_capacity, coalesce_window, clock or SystemClock(), self._lock)
         self._styles: list[StyleRun] = []
         self._revision = 0
-        self._saved_depth: int | None = None
+        self._ever_saved = False
+        self._saved_top: Command | None = None
         self._listeners: list[DocumentListener] = []
 
     # --- EditTarget: the only three methods a Command may call -------------------
@@ -131,16 +132,22 @@ class Document:
 
     @property
     def status(self) -> DocumentStatus:
-        """Undoing back to the depth at which you saved shows SAVED again."""
+        """Undoing back to the command you saved at shows SAVED again.
+
+        The marker is the *command object* on top of the undo stack, not its
+        depth. Save, undo once, then type: the stack is back to the same depth
+        holding different work, and a depth comparison would call that saved.
+        """
         with self._lock:
-            if self._saved_depth is None:
+            if not self._ever_saved:
                 return DocumentStatus.NEW if self._revision == 0 else DocumentStatus.MODIFIED
-            return DocumentStatus.SAVED if self._saved_depth == self.history.depth() else DocumentStatus.MODIFIED
+            return DocumentStatus.SAVED if self._saved_top is self.history.top() else DocumentStatus.MODIFIED
 
     def mark_saved(self) -> None:
         with self._lock:
-            self._saved_depth = self.history.depth()
-            self.history.break_coalescing()
+            self._ever_saved = True
+            self._saved_top = self.history.top()
+            self.history.break_coalescing()  # so the marker cannot be coalesced away
 
     # --- styles and observers ----------------------------------------------------
     def apply_style(self, start: int, end: int, style: Style) -> None:
@@ -338,14 +345,27 @@ class Editor:
 
     def replace_all(self, needle: str, replacement: str) -> Command | None:
         """One macro, one undo step -- and applied right to left so offsets stay valid."""
-        hits = self.find(needle)
+        hits: list[int] = []
+        for index in self.find(needle):
+            # find() reports overlapping matches, which is right for a search box
+            # and wrong here: replacing both halves of "aaaa" would corrupt each
+            # other. Keep the leftmost of every overlapping group.
+            if not hits or index >= hits[-1] + len(needle):
+                hits.append(index)
         if not hits:
             return None
         document = self.active
         before = document.cursor()
         after = Cursor(hits[0] + len(replacement))
+        # Each inner edit carries a caret anchored at its own site. Handing them
+        # all the document-wide `before` breaks undo: mid-macro the text is
+        # shorter than it started, so restoring a caret past the end raises and
+        # leaves the document half-undone. Only the macro sets the real carets.
         edits: list[Command] = [
-            ReplaceCommand(index, len(needle), replacement, before, after) for index in reversed(hits)
+            ReplaceCommand(
+                index, len(needle), replacement, Cursor(index), Cursor(index + len(replacement))
+            )
+            for index in reversed(hits)
         ]
         return document.run(MacroCommand(f"replace {needle!r}", before, after, edits))
 

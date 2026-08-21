@@ -202,6 +202,7 @@ classDiagram
         +redo(target) Command
         +break_coalescing()
         +depth() int
+        +top() Command
     }
     class EditTarget {
         <<interface>>
@@ -296,16 +297,16 @@ sequenceDiagram
     H->>H: clear redo - that future is gone
 ```
 
-**Document status.** The saved marker stores the history *depth*, not a revision counter, which is why undoing back to where you saved shows `SAVED` again.
+**Document status.** The saved marker stores the *command object* on top of the undo stack, which is why undoing back to where you saved shows `SAVED` again. Storing a depth instead is the trap: save, undo once, then type something new, and the stack is back to the same depth holding entirely different work — a counter reports `SAVED` over unsaved changes, and the user closes the tab.
 
 ```mermaid
 stateDiagram-v2
     [*] --> NEW : new_tab
     NEW --> MODIFIED : first edit
     NEW --> SAVED : save an empty document
-    MODIFIED --> SAVED : save, marking the history depth
+    MODIFIED --> SAVED : save, marking the top command
     SAVED --> MODIFIED : any edit
-    MODIFIED --> SAVED : undo back to the saved depth
+    MODIFIED --> SAVED : undo back to the marked command
     SAVED --> [*] : close_tab
 ```
 
@@ -405,7 +406,7 @@ The race it prevents: `run` must execute the command *and* push it in one critic
 
 **Buffer choice, honestly.** Sequential memory reads run at roughly 1 MB per 3 µs, so re-copying a 10 MB document on every keystroke costs about 30 µs — invisible. `SimpleBuffer` is genuinely fine for ordinary files. The gap buffer matters when the document is much larger, when the allocator churn per keystroke starts to matter, or when you want insert to be O(1) regardless of size. A piece table is the other real answer: it never moves text, makes undo nearly free because every edit is an append, and is the natural base for collaborative editing where several carets touch the document at once.
 
-**Edge cases handled**: backspace at position 0 and delete past the end raise `OutOfBoundsError`; an empty search string is rejected; overlapping matches are all found (`find("aa")` in `"aaa"` returns `[0, 1]`); replace-all applies right to left so earlier offsets stay valid; style runs shift when text is inserted before them and disappear when their range is deleted; paste with an empty clipboard raises; each tab has its own history.
+**Edge cases handled**: backspace at position 0 and delete past the end raise `OutOfBoundsError`; an empty search string is rejected; overlapping matches are all found (`find("aa")` in `"aaa"` returns `[0, 1]`) but replace-all keeps only the leftmost of each overlapping group, because replacing both halves of `"aaaa"` would corrupt each other; replace-all applies right to left so earlier offsets stay valid, and each of its inner edits carries a caret at its own site so a shrinking replacement cannot leave the caret past the end mid-undo; style runs shift when text is inserted before them and disappear when their range is deleted; paste with an empty clipboard raises; each tab has its own history.
 
 !!! warning "Common mistake"
     Storing only the text in each command and rebuilding the caret from the edit position. It works for typing and then breaks the first time someone undoes a paste over a selection — the selection does not come back, and the next keystroke lands in the wrong place. Store `before` and `after` cursors on every command from the start; it costs two integers and it is the difference between an editor that feels right and one that does not.
@@ -413,7 +414,7 @@ The race it prevents: `run` must execute the command *and* push it in one critic
 ## Extensibility and follow-ups
 
 - **A new operation** (indent, uppercase, sort lines) is one `Command` subclass with `execute` and `undo`. It joins the same stacks and needs no change anywhere else. If it is naturally several edits, build a `MacroCommand` instead and get one undo step for free.
-- **Autosave**: a listener that watches `on_document_changed` and calls `editor.save()` when the revision has moved and the injected clock says enough time has passed. No new mechanism, because saving already marks the history depth.
+- **Autosave**: a listener that watches `on_document_changed` and calls `editor.save()` when the revision has moved and the injected clock says enough time has passed. No new mechanism, because saving already marks the top command.
 - **Macros ("record what I do and replay it")**: the commands are already objects, so recording is appending them to a list and replaying is `MacroCommand(recorded).execute(other_document)`. This is the pay-off you should name when asked why Command over Memento.
 - **Syntax highlighting**: another observer that re-lexes the changed range and emits `StyleRun`s through the same Flyweight registry.
 - **Bounded history by bytes**: give `Command` a `retained_bytes()` and have `CommandHistory` drop from the front until both the count and the byte budget fit.
@@ -424,7 +425,7 @@ The race it prevents: `run` must execute the command *and* push it in one critic
 
 ## Tests
 
-`tests/test_text_editor.py` has 20 cases. The three worth walking through are coalescing, redo invalidation with caret restoration, and concurrency.
+`tests/test_text_editor.py` has 23 cases. The three worth walking through are coalescing, redo invalidation with caret restoration, and concurrency.
 
 The coalescing test asserts all three boundaries in one pass — the window, the caret move, and the resulting undo granularity:
 
@@ -444,7 +445,7 @@ The concurrency test runs eight threads typing 50 characters each into one docum
 --8<-- "code/lld/text_editor/tests/test_text_editor.py:concurrency"
 ```
 
-The rest cover: six invalid operations through `parametrize`; the `NEW → MODIFIED → SAVED` walk including undoing back to the saved point; the history cap dropping the oldest three of six edits; cut and paste as separate undo steps; replace-all as one macro with overlapping `find`; independent per-tab histories; style flyweights shared and shifted by an insert before them; the status bar counting revisions; both buffer strategies passing the identical assertions via `parametrize`; a gap buffer growing past its initial gap with the caret jumping around; and a bare `Document` used without an `Editor`. Run them with `uv run pytest code/lld/text_editor -q`.
+The rest cover: six invalid operations through `parametrize`; the `NEW → MODIFIED → SAVED` walk including undoing back to the saved point, and a different edit at the same stack depth correctly reporting `MODIFIED`; the history cap dropping the oldest three of six edits; cut and paste as separate undo steps; replace-all as one macro with overlapping `find`, undoing cleanly when the replacement is shorter than the needle, and skipping overlapping matches; independent per-tab histories; style flyweights shared and shifted by an insert before them; the status bar counting revisions; both buffer strategies passing the identical assertions via `parametrize`; a gap buffer growing past its initial gap with the caret jumping around; and a bare `Document` used without an `Editor`. Run them with `uv run pytest code/lld/text_editor -q`.
 
 ## 45-minute pacing
 

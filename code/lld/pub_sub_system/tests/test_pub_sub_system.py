@@ -1,4 +1,5 @@
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -167,6 +168,35 @@ def test_a_full_partition_blocks_the_producer_then_gives_up(broker: Broker) -> N
 
 
 # --8<-- [end:backpressure]
+
+
+def test_closing_a_partition_unparks_the_producer_without_appending(broker: Broker) -> None:
+    # The producer's wait ends on close as well as on room. Treating the two the same
+    # would let a parked producer append past max_messages into a closed partition.
+    retention = RetentionPolicy(max_messages=2, on_full=FullPolicy.BLOCK, block_timeout=5.0)
+    topic = broker.create_topic(ORDERS, partitions=1, retention=retention)
+    broker.publish(ORDERS, "first", key="alice")
+    broker.publish(ORDERS, "second", key="alice")
+    partition = topic.partition(0)
+
+    outcome: list[str] = []
+
+    def publish_third() -> None:
+        try:
+            broker.publish(ORDERS, "third", key="alice")
+        except Exception as exc:
+            outcome.append(type(exc).__name__)
+        else:
+            outcome.append("appended")
+
+    parked = threading.Thread(target=publish_third, daemon=True)
+    parked.start()
+    time.sleep(0.02)  # long enough for the producer to park in wait_for, far below any timeout
+    partition.close()
+    parked.join(timeout=2.0)
+
+    assert outcome == ["BackpressureError"]
+    assert partition.size() == 2  # the bound held
 
 
 def test_drop_oldest_sheds_instead_of_blocking(broker: Broker) -> None:

@@ -219,7 +219,7 @@ The probing question is "why not a hash map and a heap?" Because a hash map is O
 
 | Approach | Memory | Accuracy | When it is right |
 |---|---|---|---|
-| Hash map + heap | O(distinct keys): ~12 GB/day here | Exact | Bounded key spaces, or a single machine's worth of keys |
+| Hash map + heap | O(distinct keys): ~12 GB for one day-long map, ~173 GB at minute resolution | Exact | Bounded key spaces, or a single machine's worth of keys |
 | Sorted set in Redis | O(distinct keys) plus index overhead | Exact, with ranks | Leaderboards where the key set is users, not content |
 | Count-Min Sketch + heap (chosen) | O(1) per bucket: 54 KB | Overcounts by at most `eps x N` | Unbounded, skewed key spaces |
 | Space-Saving / Misra-Gries | O(K/eps) counters | Exact for true heavy hitters | Fewer knobs, harder to merge across shards |

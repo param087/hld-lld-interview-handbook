@@ -353,9 +353,7 @@ Risk runs in the gateway path, **before** the sequencer, on in-memory state:
 - **Price collars**: reject a limit price outside a band around the last trade (say ±10%). It protects the account and it protects the book from a single order sweeping thirty price levels.
 - **Kill switch**: a per-account flag that rejects everything. Every clearing firm demands one, and it must work in one sequenced command, not a config deploy.
 
-The gate validates value objects that carry no behaviour of their own, and the same limits are re-checked inside the engine (`RiskLimits` and `_risk_reason` in the previous snippet) so a compromised gateway cannot bypass them. Note `reject_reason` on the order: a rejection is recorded, not raised.
-
-```python title="code/hld/matching_engine.py — the orders, statuses and trades the gate validates"
+```python title="code/hld/matching_engine.py — the order, status and trade objects the gate validates"
 --8<-- "code/hld/matching_engine.py:models"
 ```
 

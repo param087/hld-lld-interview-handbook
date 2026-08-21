@@ -255,12 +255,10 @@ The probing question is "what do W and R buy, and what does W + R > N guarantee?
 | N=3, W=3, R=1 | Slowest, fails if any replica is down | Fastest | Read-heavy keys; writes stall on one slow replica | Configuration data |
 | N=3, W=1, R=3 | Fastest | Slowest, fails if any replica is down | Write-heavy keys | Event ingestion |
 
-The overlap argument is the whole point: with W + R > N the write and read quorums share a node, so the newest version is among the R answers. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md); `KVCluster.overlapping` runs that check.
+The overlap argument is the whole point: with W + R > N the write and read quorums share a node, so the newest version is among the R answers. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md); `KVCluster.overlapping` runs that check. The coordinator sends to all N and waits for W (or R), so tail latency becomes a race the slowest replica loses, at the cost of N replica operations per request.
 
-Four nuances worth volunteering:
+Two nuances worth volunteering:
 
-- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, at the cost of N replica operations per request.
-- **W + R > N is not linearizability.** Concurrent writes both succeed and are recorded, not ordered (deep dive 3), and a sloppy quorum can acknowledge on a stand-in no read quorum contacts (deep dive 4).
 - **Durability is W, not N.** When the client hears "ok" two WALs hold the write; the third copy arrives via a late acknowledgement or a hint.
 - **The budget is one round trip.** A write is an fsync-ed WAL append plus one same-datacenter hop (~500 µs) for the second acknowledgement, a read ~16 µs of SSD per SSTable consulted — both far inside the 10/20 ms p99.
 
@@ -296,7 +294,7 @@ The probing question is "a node dies mid-afternoon; walk me through the next hou
 | Read repair | Stale replicas of hot keys | On the next read | One extra write per stale answer |
 | Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hashes compared in proportion to differences |
 
-**Gossip** spreads membership: a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D — the write still reaches W, so the client is never refused, and that sloppy quorum is why deep dive 2's guarantee weakens under failure. When gossip reports D back, E hands the hinted versions over; if E died first the hint is lost and **anti-entropy** compares Merkle trees of the range A and D share, descending only where hashes differ (13 comparisons to find one lost update among 200 keys).
+Two details the table cannot show. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** — that stand-in is outside D's replica set, which is why deep dive 2's overlap guarantee weakens under failure. And a Merkle sweep descends only where subtree hashes differ, so it costs 13 comparisons to find one lost update among 200 keys.
 
 The cluster class ties it together — `put` records hints, `recover` hands them off, `anti_entropy` repairs what the hints missed:
 
@@ -349,9 +347,7 @@ flowchart LR
     n_bloom -->|"yes"| n_ln
 ```
 
-The write is acknowledged as soon as the WAL append is durable — one sequential write, no seek. The memtable is sorted in memory (a skip list in RocksDB) so a flush streams entries in key order, and flushed SSTables are immutable, so readers need no locks and a whole table can be shipped to a joining node. A read checks the memtable, then each SSTable's Bloom filter — at ~10 bits per key it rules out ~99% of the tables that lack the key — and the sparse index turns what remains into one block read (~16 µs of SSD). Compaction merges tables in the background, keeps the newest siblings and drops tombstones past the grace period.
-
-Whiteboard `WAL -> memtable -> SSTable (Bloom + index) -> compaction` and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill"; measured numbers on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
+Whiteboard `WAL -> memtable -> SSTable (Bloom + index) -> compaction` and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill". The two numbers to keep: a Bloom filter at ~10 bits per key rules out ~99% of the tables that lack the key, and the sparse index turns what remains into one block read (~16 µs of SSD). Everything else — skip-list memtables, immutable SSTables, compaction strategies and measured amplification — is on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
 
 ## Scaling, bottlenecks and failure modes
 
@@ -422,9 +418,6 @@ What breaks first, and what you do about it:
 
 ??? question "How do you keep vector clocks from growing without bound?"
     Entries are per coordinator, so a clock holds one per node that ever coordinated the key; Dynamo truncates to the ten newest. Truncation can fake a sibling, which the next reconciling write removes.
-
-??? question "Is W + R > N strong consistency?"
-    No. A reader sees the latest *acknowledged* write only when both quorums come from the home replicas. Concurrent writes stay unordered, and a sloppy quorum can acknowledge on a stand-in no read quorum contacts.
 
 ??? question "How does a new node join without downtime?"
     The operator adds it with a set of tokens, gossip spreads the new ring, and the node streams each range from the current replicas while they keep serving; it answers reads once streaming completes.

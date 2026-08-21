@@ -376,7 +376,7 @@ broker state=stopped, dead letters=1
 
 **Ordering.** One worker per `(group, partition)` is the entire guarantee. Same key → same partition → same worker → offset order. Across partitions there is no order at all, and a candidate who promises one has not understood the model.
 
-**Backpressure versus retention.** A record is *not* freed when it is acked; it is freed when the buffer is under pressure and every group has committed past it. Sizing, using the chat fan-out numbers: 2B messages/day is 2B / 10^5 ≈ 23k msg/s; spread over four partitions that is roughly 5.8k msg/s each, so a 1,024-record buffer absorbs about 1,024 / 5,800 ≈ 0.18 s of consumer hiccup. That is the honest claim — a bounded buffer buys you a couple of hundred milliseconds, not minutes. Past that, `BLOCK` slows the producer down and `DROP_OLDEST` sheds; both increment `dropped`.
+**Backpressure versus retention.** A record is *not* freed when it is acked; it is freed when the buffer is under pressure and every group has committed past it. Sizing, using the chat fan-out numbers: 2B messages/day is 2B / 86,400 s ≈ 23k msg/s; spread over four partitions that is roughly 5.8k msg/s each, so a 1,024-record buffer absorbs about 1,024 / 5,800 ≈ 0.18 s of consumer hiccup. That is the honest claim — a bounded buffer buys you a couple of hundred milliseconds, not minutes. Past that, `BLOCK` slows the producer down and `DROP_OLDEST` sheds; both increment `dropped`.
 
 **Retention overtaking a slow consumer.** Age-based trimming ignores consumers, so a group can find its offset below `earliest_offset()`. `fetch` raises `OffsetOutOfRangeError`, the worker seeks forward, and the gap is counted in `skipped` — visible data loss beats silent data loss.
 
@@ -401,7 +401,7 @@ broker state=stopped, dead letters=1
 
 ## Tests
 
-`tests/test_pub_sub_system.py` has 21 cases. Every asynchronous assertion uses a barrier — `RecordingConsumer.wait_for` or `Broker.drain` — so nothing sleeps and nothing is timing-dependent.
+`tests/test_pub_sub_system.py` has 22 cases. Every asynchronous assertion uses a barrier — `RecordingConsumer.wait_for` or `Broker.drain` — so nothing sleeps and nothing is timing-dependent.
 
 The group test asserts the two guarantees at once: independent cursors across groups, and per-key order inside one:
 

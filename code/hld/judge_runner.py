@@ -258,6 +258,13 @@ class SubmissionQueue:
             return submission_id
 
     def complete(self, submission_id: str) -> None:
+        """Release the lease. A worker whose lease already expired finds nothing to release.
+
+        A production queue also hands out a **lease token** and checks it here, so a worker that
+        was reclaimed and then woke up cannot release the lease of the worker that replaced it.
+        This model leans on the other half of the contract instead: the verdict write is
+        idempotent on ``submission_id``, so a late finisher rewrites the same answer.
+        """
         with self._lock:
             if self._leases.pop(submission_id, None) is None:
                 raise NotFoundError(f"submission {submission_id!r} is not leased")

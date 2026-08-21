@@ -171,7 +171,10 @@ class InventoryService:
             return reservation
 
     def commit(self, reservation_id: str) -> Reservation:
-        """Turn a hold into a sale, but only if no SKU moved since the reservation was taken."""
+        """Turn a hold into a sale. No version check is needed and that is the point: the units
+        are already out of ``available``, so nobody else could have taken them. Only the
+        reservation's own state can stop a commit -- expired or released means the units went
+        back on the shelf and may already be sold to somebody else."""
         with self._lock:
             reservation = self._get(reservation_id)
             if reservation.state is ReservationState.COMMITTED:
@@ -217,6 +220,8 @@ class InventoryService:
         if reservation_id not in self._reservations:
             raise NotFoundError(f"unknown reservation {reservation_id}")
         return self._reservations[reservation_id]
+
+    # -- read path ----------------------------------------------------------------------------
     def available(self, sku: str) -> int:
         with self._lock:
             if sku not in self._stock:

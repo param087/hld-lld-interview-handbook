@@ -64,7 +64,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Hot cache | ~175k active documents x (50 KB snapshot + tail) | ~10 GB in the editor tier |
 | Editor servers | 350k / 100k sockets = 4, sized for blast radius | ~50, each owning a slice of documents |
 
-Two things to say out loud. The op log adds ~3 TB a day against a document corpus of ~5 TB in total, so **two days of keystrokes outweigh every document ever written** and a year of log is ~200x the text it produced — snapshots and compaction are the storage design, not an optimisation. And the per-document rate is tiny — 50 editors at 5 ops/s is 250 ops/s — which is why a *single sequencer per document* is affordable and a global one would not be.
+Two things to say out loud. A year of op log is **~200x the text it produced** (1.1 PB against a 5 TB corpus), so snapshots and compaction are the storage design, not an optimisation. And the per-document rate is tiny — 50 editors at 5 ops/s is 250 ops/s — which is why a *single sequencer per document* is affordable and a global one would not be.
 
 ## API design
 
@@ -316,7 +316,7 @@ Say the honest part out loud: this transform lets a delete swallow text typed in
 
 ## Deep dive: the operation log, snapshots and storage
 
-The log grows ~3 TB/day while the documents total ~5 TB. Left alone it is the whole system's cost, so the storage design is really a compaction design.
+Left alone the log is the whole system's cost, so the storage design is really a compaction design.
 
 **Snapshots.** A worker consuming the log writes a text blob to object storage every few hundred ops, with a pointer row at that revision. Opening a document becomes "newest snapshot, then replay what follows" — bounded work whatever the document's age. Cadence trades open latency against snapshot volume; a few hundred ops keeps replay under 10 ms.
 

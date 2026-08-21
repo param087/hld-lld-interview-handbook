@@ -90,7 +90,7 @@ class WindowedAggregator:
         self,
         window_s: float = 60.0,
         watermark_lag_s: float = 30.0,
-        dedup_ttl_s: float = 300.0,
+        dedup_ttl_s: float = 600.0,
     ) -> None:
         if window_s <= 0 or watermark_lag_s < 0 or dedup_ttl_s < 0:
             raise ValidationError("window_s must be positive; lag and TTL must not be negative")
@@ -163,8 +163,8 @@ class WindowedAggregator:
     def _expire_dedup(self, mark: float) -> None:
         """Drop dedup keys older than the TTL; caller holds the lock.
 
-        Bounded memory is the point: at 10k events/s a 5-minute TTL is 3M keys, which is a Redis
-        shard, while an unbounded set is an outage waiting for a traffic spike.
+        Bounded memory is the point: at 10k events/s a 10-minute TTL is 6M keys (~100 MB), which
+        is one Redis shard, while an unbounded set is an outage waiting for a traffic spike.
         """
         cutoff = mark - self.dedup_ttl_s
         stale = [key for key, seen_at in self._seen.items() if seen_at < cutoff]
@@ -254,7 +254,7 @@ def _scenario() -> _Scenario:
 
 
 def main() -> None:
-    agg = WindowedAggregator(window_s=60.0, watermark_lag_s=30.0, dedup_ttl_s=300.0)
+    agg = WindowedAggregator(window_s=60.0, watermark_lag_s=30.0, dedup_ttl_s=600.0)
     scenario = _scenario()
     print(f"tumbling windows of {agg.window_s:g} s, watermark lag {agg.watermark_lag_s:g} s")
 

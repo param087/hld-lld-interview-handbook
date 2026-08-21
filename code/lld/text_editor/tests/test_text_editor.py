@@ -121,6 +121,24 @@ def test_document_status_walks_new_modified_saved_and_back(editor: Editor, clock
     assert document.status is DocumentStatus.SAVED  # undone back to the saved point
 
 
+def test_a_different_edit_at_the_same_depth_is_not_saved(editor: Editor, clock: FakeClock) -> None:
+    """Save, undo, then type: same stack depth, different history, unsaved work."""
+    document = editor.active
+    type_all(editor, clock, "hello")
+    clock.advance(3)
+    type_all(editor, clock, " world")
+    editor.save()
+    assert document.status is DocumentStatus.SAVED
+
+    editor.undo()
+    clock.advance(3)
+    editor.type_text("!!!")
+
+    assert document.text() == "hello!!!"
+    assert editor.storage.load("notes.txt") == "hello world"
+    assert document.status is DocumentStatus.MODIFIED  # a depth counter would say SAVED here
+
+
 def test_history_cap_drops_the_oldest_entries(clock: FakeClock) -> None:
     editor = Editor(clock=clock, history_capacity=3, coalesce_window=0.0)
     editor.new_tab("capped.txt")
@@ -190,6 +208,31 @@ def test_replace_all_is_one_undo_step_and_finds_overlaps(editor: Editor, clock: 
     editor.undo()
     assert editor.active.text() == "aaa bab"
     assert editor.replace_all("zzz", "q") is None
+
+
+def test_replace_all_with_a_shorter_replacement_still_undoes(clock: FakeClock) -> None:
+    """Mid-macro the document is shorter than the caret it started from."""
+    editor = Editor(storage=InMemoryStorage(), clock=clock)
+    document = editor.new_tab("shrink.txt", "the kitten sat on the kitten mat")
+
+    editor.replace_all("kitten", "cat")
+    assert document.text() == "the cat sat on the cat mat"
+    editor.undo()
+    assert document.text() == "the kitten sat on the kitten mat"
+    editor.redo()
+    assert document.text() == "the cat sat on the cat mat"
+
+
+def test_replace_all_skips_overlapping_matches(clock: FakeClock) -> None:
+    """`find` counts overlaps; replacing them all would corrupt each other."""
+    editor = Editor(storage=InMemoryStorage(), clock=clock)
+    document = editor.new_tab("overlap.txt", "aaaa")
+    assert editor.find("aa") == [0, 1, 2]
+
+    editor.replace_all("aa", "X")
+    assert document.text() == "aaaa".replace("aa", "X") == "XX"
+    editor.undo()
+    assert document.text() == "aaaa"
 
 
 def test_tabs_have_independent_documents_and_histories(editor: Editor, clock: FakeClock) -> None:

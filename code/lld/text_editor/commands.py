@@ -248,9 +248,19 @@ class CommandHistory:
             self._can_coalesce = False
 
     def depth(self) -> int:
-        """Total edits ever applied and still applied -- the save marker compares this."""
+        """Total edits ever applied and still applied."""
         with self._lock:
             return len(self._undo) + self.dropped
+
+    def top(self) -> Command | None:
+        """The command an undo would take back -- the document's save marker.
+
+        Identity, not a count: after saving, undoing once and typing something
+        new, the stack is the same *depth* but a different *history*, and a
+        counter would wrongly report the document as saved.
+        """
+        with self._lock:
+            return self._undo[-1] if self._undo else None
 
     def can_undo(self) -> bool:
         with self._lock:

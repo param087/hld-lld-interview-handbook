@@ -141,6 +141,7 @@ def test_the_open_order_count_falls_again_when_a_resting_order_fills() -> None:
 
 
 def test_a_partially_filled_resting_order_still_counts_against_the_open_cap() -> None:
+    """The other edge of the same rule: only a *fully* filled maker gives its slot back."""
     exchange = Exchange(RiskLimits(max_open_orders_per_account=1))
     exchange.send(NewOrder("m1", "mm", Side.SELL, 100, 1010))
     exchange.send(NewOrder("t1", "hedge", Side.BUY, 40, 1010))  # partial: m1 keeps resting

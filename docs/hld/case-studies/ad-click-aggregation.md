@@ -57,7 +57,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Ingest bandwidth | 30k/s x 1 KB | ~30 MB/s — under one Kafka broker's ~100 MB/s in, so 3 brokers for replication |
 | Raw storage | 1B/day x 1 KB | 1 TB/day, ~365 TB/year, ~1.1 PB at replication factor 3 |
 | Aggregate storage | 100k ads x 1,440 minutes x 16 B | ~2.3 GB/day, ~840 GB/year — **400x smaller than raw** |
-| Query read QPS | 100k advertisers x 20 queries/day / 10^5 | ~20/s average, ~60/s peak |
+| Query read QPS | 10k advertisers x 200 dashboard queries/day / 10^5 | ~20/s average, ~60/s peak |
 | Write/read ratio | 10k / 20 | **500:1** — inverted from a typical web service |
 | Dedup store | 10k/s x 600 s TTL x 16 B key | ~100 MB of keys, comfortably one Redis shard |
 | Query cache | 20% of 2M daily queries x 10 KB | ~4 GB of hot dashboard responses |
