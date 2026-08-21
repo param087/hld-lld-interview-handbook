@@ -87,9 +87,9 @@ class Player:
 class WinChecker:
     """Incremental row, column and diagonal counters: O(1) per move, no rescan.
 
-    A naive checker rescans 2N + 2 lines after every move, so a game costs
-    O(N^3). Here each placement bumps at most four counters and compares them
-    with N. The centre of an odd board sits on *both* diagonals, so the two
+    A naive checker rescans 2N + 2 lines of N cells after every move - O(N^2) a
+    move, O(N^4) over a full board. Here each placement bumps at most four
+    counters and compares them with N. The centre of an odd board sits on *both* diagonals, so the two
     diagonal tests are separate ``if``s, never an ``elif`` - that is the bug
     interviewers look for.
     """

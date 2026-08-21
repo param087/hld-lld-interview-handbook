@@ -155,7 +155,7 @@ Draw the builder, then say: "in Python I would start with keyword-only arguments
 - [Design a meeting scheduler and calendar](../problems/meeting-scheduler.md) — this module's `MeetingBuilder`: title and organizer up front, attendees, slot, room and recurrence from three services, one validation before the calendar accepts it.
 - [Design a hotel management system](../problems/hotel-management.md) — a reservation assembled from guest, room type, dates and add-ons; check-out after check-in and guests within capacity are checked once, before inventory is touched.
 - [Design a logging framework](../problems/logging-framework.md) — a logger configuration built in steps (level, handlers, formatter, filters) and validated before the first record, the shape `logging.config.dictConfig` exposes as data.
-- [Design a notification service (LLD)](../problems/notification-service.md) — a notification built from template, recipients, channel and priority; `build` rejects an SMS over the character limit, so the dispatcher only sees valid messages.
+- [Design a notification service (LLD)](../problems/notification-service.md) — a request assembled from template, recipients, channel and priority; there the checks live in pipeline stages rather than in `build`, which is where they go once they must be reordered.
 
 ## Interview tips
 

@@ -9,7 +9,7 @@ from lld.bowling_alley.strategies import HappyHourPricing, PerGamePricing
 from lld.tic_tac_toe.base import GameStatus
 
 ANA = [1, 4, 4, 5, 6, 4, 5, 5, 10, 0, 1, 7, 3, 6, 4, 10, 2, 8, 6]
-BO = [10] * 11 + [7]  # nine strikes, then three more balls in the tenth: 297
+BO = [10] * 12  # nine strikes, then three more balls in the tenth: the perfect 300
 
 
 def bowl(game: BowlingGame, queues: dict[str, deque[int]], until_frame: int) -> None:

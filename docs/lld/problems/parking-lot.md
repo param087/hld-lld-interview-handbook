@@ -19,7 +19,7 @@ description: The canonical LLD interview problem — entities, a two-lock concur
 **Functional**
 
 - Multiple floors; each floor has spots of types motorcycle, compact, large and electric (compact with a charger).
-- Vehicle types: motorcycle, car, truck, electric car. A motorcycle may use any spot; a car a compact or large spot; a truck only a large spot; an electric car prefers an electric spot but can take a compact one.
+- Vehicle types: motorcycle, car, truck, electric car. A motorcycle may use a motorcycle, compact or large spot (never an electric one — a charger is not wasted on it); a car a compact or large spot; a truck only a large spot; an electric car prefers an electric spot but falls back to a compact or large one.
 - Several entry gates issue tickets and assign the *nearest* eligible spot (lowest floor, most suitable type, lowest spot number).
 - Several exit gates compute the fee with a pricing strategy (hourly with a grace period, flat rate, hourly with a daily cap), accept cash or card, and free the spot.
 - A lost ticket is settled with a flat penalty by licence plate.

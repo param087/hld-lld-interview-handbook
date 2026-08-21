@@ -173,7 +173,7 @@ The third form makes the class statement itself the registration:
 - [Design a parking lot](../problems/parking-lot.md) — `VehicleFactory.create(vehicle_type, plate)` maps a string from the gate to `Car`, `Truck` or `Motorcycle` through a registry dict; adding a bus touches the registry, not the gate.
 - [Design a vending machine (and a coffee machine)](../problems/vending-machine.md) — products and beverages are built from a slot code or recipe name.
 - [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — a `PaymentProcessor` per payment-method string (card, UPI, net banking), each an adapter over a provider.
-- [Design a notification service (LLD)](../problems/notification-service.md) — this module's senders per channel, with the factory injected into the dispatcher.
+- [Design a notification service (LLD)](../problems/notification-service.md) — one sender per channel behind one interface; that problem hands the dispatcher a ready-built `{Channel: sender}` map, which is this registry with the construction step removed.
 
 ## Interview tips
 

@@ -102,17 +102,21 @@ class LibraryService:
         with self._ledger_lock:
             account = self._require_account(account_id)
             self._check_borrowable(account)
-            if len(account.borrowed) + len(wanted) > account.max_loans:
+            # Only barcodes the card is not already holding take a quota slot, and
+            # only those may be released again: rolling back the whole scan would
+            # drop a copy the member genuinely still has out.
+            claimed = set(wanted) - account.borrowed
+            if len(account.borrowed) + len(claimed) > account.max_loans:
                 raise LoanLimitError(
                     f"account {account_id} may hold {account.max_loans} items; "
                     f"has {len(account.borrowed)}, asked for {len(wanted)}"
                 )
-            account.borrowed.update(wanted)
+            account.borrowed.update(claimed)
         try:
             self._items.lend(wanted, account_id, due_on)
         except (ItemUnavailableError, NotInCatalogError):
             with self._ledger_lock:
-                account.borrowed.difference_update(wanted)
+                account.borrowed.difference_update(claimed)
             raise
         loans = []
         with self._ledger_lock:

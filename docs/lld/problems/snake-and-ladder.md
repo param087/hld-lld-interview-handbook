@@ -181,7 +181,7 @@ sequenceDiagram
         B-->>G: Position(97), no jumps
     end
     G->>G: record the turn, check for home
-    G-)L: on_event, delivered outside the lock
+    G-)L: on_event, buffered then flushed
     G-->>T: TurnRecord
 ```
 

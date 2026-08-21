@@ -329,7 +329,7 @@ dead letter: ['task-3']
 timer parked 12 h out, then an insertion due now: urgent-alert ran without a nudge = True
 digest paused through its slot: 0 runs, status paused
 digest resumed: 1 run, next due in 3600 s
-cancelled digest and heartbeat: heap still holds 3 tombstoned entries
+cancelled digest and heartbeat: heap holds 3 entries, 2 tombstoned
 shutdown: 6 tasks registered, 2 succeeded, 1 dead
 ```
 
@@ -344,7 +344,7 @@ The order is always `Scheduler._lock` then the queue's condition — `_enqueue` 
 
 **Why not poll.** The obvious first answer is a loop that sleeps a second and scans for due tasks. It costs 86,400 scans a day per scheduler, it adds up to a second of latency to every task, and it still gets the interesting case wrong: a task scheduled to run now while the loop is mid-sleep waits anyway. `Condition.wait(delay)` is both cheaper and more accurate, and an uncontended acquire around it costs about 17 ns.
 
-**Cancelling a queued entry.** Removing an arbitrary element from a binary heap is O(n) plus a re-heapify, so you do not: `cancel`, `pause` and every re-queue bump the task's `generation`, and a popped entry whose generation no longer matches the task is dropped. The heap therefore holds tombstones — the demo ends with three of them — which is the accepted trade. If tombstones ever outgrew live entries you would rebuild the heap during a quiet tick, exactly as a log-structured store compacts.
+**Cancelling a queued entry.** Removing an arbitrary element from a binary heap is O(n) plus a re-heapify, so you do not: `cancel`, `pause` and every re-queue bump the task's `generation`, and a popped entry whose generation no longer matches the task is dropped. The heap therefore holds tombstones — the demo ends with two of them beside one live entry — which is the accepted trade. If tombstones ever outgrew live entries you would rebuild the heap during a quiet tick, exactly as a log-structured store compacts.
 
 **Cancelling a running task.** You cannot. Python has no safe way to stop a thread from outside, so `cancel` marks the task and `_settle` refuses to reschedule it; the in-flight run finishes. Timeouts are the same story: the record is marked `timed_out` after the fact, and the honest answer for real enforcement is cooperative cancellation — hand the task an `Event` it checks — or a subprocess you can actually kill. Say this rather than pretending a decorator can interrupt a thread.
 

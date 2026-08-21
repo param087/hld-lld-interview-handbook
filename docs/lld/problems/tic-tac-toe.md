@@ -296,7 +296,7 @@ The vocabulary comes next. Errors subclass the shared hierarchy so a caller can 
 --8<-- "code/lld/tic_tac_toe/models.py:values"
 ```
 
-This is the class the interviewer is waiting for. A naive checker rescans 2N + 2 lines after every move, so a full 3 x 3 game costs about 9 x 8 = 72 line scans and an N x N game is O(N^3). Counting instead touches at most four integers per move and compares each with N:
+This is the class the interviewer is waiting for. A naive checker rescans 2N + 2 lines of N cells after every move, so a full 3 x 3 game costs about 9 x 8 = 72 line scans and an N x N game is O(N^2) per move, O(N^4) over the whole board. Counting instead touches at most four integers per move and compares each with N:
 
 ```python title="code/lld/tic_tac_toe/models.py — the O(1) win checker"
 --8<-- "code/lld/tic_tac_toe/models.py:win_checker"
@@ -371,7 +371,7 @@ It is an `RLock` because the hooks re-enter: `play_turn` holds the lock and call
 
 **The race it prevents.** Two clients submitting into the same game interleave at three points: the turn check, the cell check, and the status update. Holding the lock across all of `submit_move` makes "check it is your turn, place, judge" atomic, so the losing thread gets `NotYourTurnError` or `CellOccupiedError` and the board never records two moves for one turn. The concurrency test fires 36 submissions from eight workers at one game and asserts that the accepted count equals the number of turns, that no cell appears twice, and that symbols still alternate.
 
-**Notifying outside the lock.** Events are appended to a buffer under the lock and delivered by `flush_events` after it is released, so a renderer that blocks on a socket cannot stall the next turn. This is the same rule the parking lot's floors follow.
+**Notifying outside the lock.** Events are buffered under the lock and delivered by `flush_events` once `play_turn` releases it, the same rule the parking lot's floors follow. Be precise about the exception, because an interviewer reading the code will find it: `submit_move` holds the reentrant lock *across* `play_turn`, so on that path delivery still runs inside its critical section. Name it, then offer the fix — drain the buffer from a queue on another thread.
 
 **Edge cases handled**: a cell that is occupied or off the board (a rejected move costs no turn); a player moving out of turn or not in the game; undo on an empty history; undo of a *winning* move, which must reopen the game; the centre cell of an odd board incrementing both diagonals; a draw when the last cell fills; a board smaller than 3 x 3; two players sharing a symbol; a random bot constructed without a seed; and a turn limit that abandons a game rather than spinning forever.
 

@@ -159,8 +159,7 @@ Python offers a form with *one* class, the way `xml.etree.ElementTree.Element` w
 
 - [Design an in-memory file system](../problems/in-memory-file-system.md) — this tree with paths, cached sizes and a visitor for search.
 - [Design a learning management system](../problems/learning-management.md) — course, module and lesson with total duration and completion percentage as aggregate operations.
-- [Design a restaurant management system](../problems/restaurant-management.md) — a menu of sections and items where availability and price roll up.
-- [Design Splitwise](../problems/splitwise.md) — groups that contain members and subgroups, with balances aggregated at every level.
+- [Design a restaurant management system](../problems/restaurant-management.md) — `MenuComponent` over `MenuItem`, `MenuSection` and `ComboItem`, where price and availability roll up.
 
 ## Interview tips
 

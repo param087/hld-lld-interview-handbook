@@ -161,7 +161,7 @@ class Scoreboard:
         game.subscribe(self)
 
     def on_event(self, event: GameEvent) -> None:
-        rows = self._game.standings()  # taken outside the game lock, by design
+        rows = self._game.standings()  # the newest snapshot, not the one at emit time
         with self._lock:
             self._rows = rows
 

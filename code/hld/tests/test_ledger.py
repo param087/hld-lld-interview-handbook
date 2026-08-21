@@ -135,6 +135,8 @@ def test_a_wallet_cannot_go_overdrawn_but_a_provider_account_can(ledger: Ledger)
         ([("e1", PaymentState.AUTHORIZED)], PaymentState.AUTHORIZED),
         ([("e1", PaymentState.AUTHORIZED), ("e2", PaymentState.CAPTURED)], PaymentState.CAPTURED),
         ([("e1", PaymentState.FAILED)], PaymentState.FAILED),
+        # a declined capture: the page's state diagram has this edge, so the code must too
+        ([("e1", PaymentState.AUTHORIZED), ("e2", PaymentState.FAILED)], PaymentState.FAILED),
         (
             [("e1", PaymentState.AUTHORIZED), ("e2", PaymentState.CAPTURED), ("e3", PaymentState.SETTLED)],
             PaymentState.SETTLED,
@@ -160,6 +162,17 @@ def test_webhooks_may_duplicate_and_arrive_out_of_order() -> None:
     assert payment.state is PaymentState.CAPTURED
     with pytest.raises(InvalidStateError, match="cannot go"):
         machine.apply(Payment("pay-2", Money.of("1.00")), "e5", PaymentState.SETTLED)
+
+
+def test_an_impossible_event_is_not_swallowed_when_the_provider_redelivers_it() -> None:
+    """A rejected event must stay un-applied, or the redelivery that would work is lost."""
+    machine, payment = PaymentStateMachine(), Payment("pay-1", Money.of("10.00"))
+    with pytest.raises(InvalidStateError):
+        machine.apply(payment, "e-settled", PaymentState.SETTLED)  # settled before authorized
+    assert machine.apply(payment, "e1", PaymentState.AUTHORIZED) is True
+    assert machine.apply(payment, "e2", PaymentState.CAPTURED) is True
+    assert machine.apply(payment, "e-settled", PaymentState.SETTLED) is True
+    assert payment.state is PaymentState.SETTLED
 
 
 def test_reconcile_splits_the_difference_into_actionable_buckets() -> None:

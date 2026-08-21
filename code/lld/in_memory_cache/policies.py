@@ -140,7 +140,15 @@ class LFUPolicy:
 
     def on_access(self, key: Hashable) -> None:
         node = self._nodes[key]
-        self._detach(node)
+        bucket = self._buckets[node.freq]
+        bucket.unlink(node)
+        if bucket.is_empty():
+            del self._buckets[node.freq]
+            if self._min_freq == node.freq:
+                # The node itself lands in freq + 1 and every surviving bucket is
+                # higher, so the new minimum is exactly one more. No scan: this is
+                # the step that makes the read path O(1).
+                self._min_freq = node.freq + 1
         node.freq += 1
         self._bucket(node.freq).push_front(node)
 
@@ -185,8 +193,9 @@ class LFUPolicy:
             return
         del self._buckets[freq]
         if self._min_freq == freq:
-            # O(distinct frequencies), and only on the rare paths: an explicit
-            # delete, an expiry, or the promotion of the last key at the minimum.
+            # O(distinct frequencies), and never on the read path: only an explicit
+            # delete, an expiry, or an eviction that drains the minimum bucket - and
+            # after an eviction the next insert resets ``_min_freq`` to 1 anyway.
             self._min_freq = min(self._buckets, default=0)
 
 

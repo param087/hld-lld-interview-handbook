@@ -6,7 +6,7 @@ A complete, self-contained preparation guide for SDE2-level system design (HLD) 
 
 - **27 HLD fundamentals** — from back-of-envelope estimation and caching to consensus, Kafka internals and geospatial indexing, each with diagrams and a tested Python implementation of the core idea.
 - **31 HLD case studies** — URL shortener, news feed, chat, Uber, Ticketmaster, payments, Kafka-like queue, S3, Google Docs, stock exchange and more. Same spine every time: requirements → estimation → API → data model → architecture → deep dives → scaling → trade-offs → 45-minute pacing.
-- **8 LLD fundamentals + 32 design patterns** in idiomatic Python (ABCs, Protocols, dataclasses, enums), each pattern with the canonical interview example *and* the Pythonic shortcut.
+- **8 LLD fundamentals + 31 design patterns** (23 GoF + 8 modern) in idiomatic Python (ABCs, Protocols, dataclasses, enums), each pattern with the canonical interview example *and* the Pythonic shortcut.
 - **36 LLD problems** — parking lot, elevator, vending machine, Splitwise, BookMyShow, chess, text editor, payment wallet… each a full runnable package with pytest tests, class/sequence/state diagrams and an interview walkthrough.
 - **11 cheatsheets**, **6 mock interviews** (full 45-minute transcripts with evolving diagrams) and an **8-week study roadmap**.
 

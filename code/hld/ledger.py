@@ -241,8 +241,10 @@ class PaymentState(StrEnum):
 _RANK: dict[PaymentState, int] = {
     PaymentState.CREATED: 0,
     PaymentState.AUTHORIZED: 1,
-    PaymentState.FAILED: 1,
     PaymentState.CAPTURED: 2,
+    # A declined capture must still be able to fail an authorized payment, so FAILED ranks
+    # above AUTHORIZED; ranking it level with CAPTURED is what makes a *late* failure stale.
+    PaymentState.FAILED: 2,
     PaymentState.SETTLED: 3,
     PaymentState.REFUNDED: 4,
 }
@@ -271,11 +273,14 @@ class PaymentStateMachine:
         """Return True if the payment moved. ``_lock``-free: callers hold the row lock."""
         if event_id in payment.applied_events:
             return False  # the provider retried the same webhook
-        payment.applied_events.add(event_id)
         if _RANK[target] <= _RANK[payment.state]:
+            payment.applied_events.add(event_id)
             return False  # authorized arriving after captured: already implied, ignore it
         if target not in _ALLOWED[payment.state]:
+            # Deliberately *not* recorded as applied: an impossible event is an alert, and the
+            # same event redelivered once the payment has moved on may well be legitimate.
             raise InvalidStateError(f"cannot go {payment.state} -> {target} for {payment.payment_id}")
+        payment.applied_events.add(event_id)
         payment.state = target
         return True
 

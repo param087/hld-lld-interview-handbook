@@ -174,7 +174,7 @@ The structural patterns all "wrap something", so classify by two questions: does
 
 - [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — `PaymentProcessor` over several providers; the adapters absorb provider-specific ids, units and failure codes.
 - [Design a notification service (LLD)](../problems/notification-service.md) — one `Channel` interface over SMS, email and push vendors whose SDKs never agree on addresses or receipts.
-- [Design a food delivery system (Swiggy, Zomato, DoorDash)](../problems/food-delivery.md) — map and ETA providers behind one `DistanceService`, payments behind the same processor interface as above.
+- [Design a food delivery system (Swiggy, Zomato, DoorDash)](../problems/food-delivery.md) — distance and ETA behind one interface, so a straight-line estimate and a maps provider are interchangeable; payments behind the same processor interface as above.
 
 ## Interview tips
 

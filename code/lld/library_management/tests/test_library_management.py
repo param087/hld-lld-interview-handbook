@@ -117,6 +117,22 @@ def test_loan_limit_and_blocked_account_stop_borrowing(clock: FakeClock) -> None
     assert library.checkout(account.id, ["C-008"])[0].barcode == "C-008"
 
 
+def test_rescanning_a_copy_already_on_the_card_leaves_the_quota_intact(clock: FakeClock) -> None:
+    """The rollback must release only the slots this checkout claimed.
+
+    Scanning C-001 twice fails in ``lend`` because the copy is already LOANED; if the
+    rollback subtracted the whole scan, the member would keep the book *and* get the
+    quota slot back, and the five-item limit would drift upwards one re-scan at a time.
+    """
+    catalog, library = build(clock)
+    account = library.register(Member("p-1", "Asha", "asha@example.com"))
+    library.checkout(account.id, ["C-001"])
+    with pytest.raises(ItemUnavailableError):
+        library.checkout(account.id, ["C-001"])
+    assert library.account(account.id).borrowed == {"C-001"}
+    assert catalog.item("C-001").status is ItemStatus.LOANED
+
+
 # --8<-- [start:holds]
 def test_hold_queue_is_fifo_and_a_return_puts_the_copy_on_the_hold_shelf(clock: FakeClock) -> None:
     catalog, library = build(clock, copies=1)

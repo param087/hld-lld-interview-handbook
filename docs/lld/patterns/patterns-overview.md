@@ -160,7 +160,7 @@ Every problem page has a "Design patterns applied" table with a *why* column; th
 | [Design a vending machine (and a coffee machine)](../problems/vending-machine.md) | State (core), Decorator (add-ons), Strategy (change-making) |
 | [Design a text editor with undo and redo](../problems/text-editor.md) | Command (core), Memento (the alternative), Flyweight (styles) |
 | [Design a logging framework](../problems/logging-framework.md) | Chain of Responsibility (propagation), Strategy (formatter), Builder (config), Null Object |
-| [Design a notification service (LLD)](../problems/notification-service.md) | Factory Method (senders), Pipeline (validate, dedup, rate limit), Decorator (retries) |
+| [Design a notification service (LLD)](../problems/notification-service.md) | Pipeline (preferences, dedup, rate limit), Strategy (senders, retries), Decorator (circuit breaker), Null Object |
 | [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) | Adapter (providers), Unit of Work (ledger), Chain of Responsibility (fraud), State (payment) |
 
 ## Interview tips

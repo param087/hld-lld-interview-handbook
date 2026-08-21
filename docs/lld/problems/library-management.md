@@ -116,7 +116,7 @@ classDiagram
         +misses: int
         +invalidate()
     }
-    Book "1" o-- "many" Author
+    Book "many" o-- "many" Author
     Book "1" *-- "many" BookItem
     BookRepository <|.. InMemoryBookRepository
     SearchableCatalog <|.. Catalog
@@ -378,7 +378,7 @@ C-001 marked lost -> fee 30.00 USD, copy is lost
 
 **The last copy.** `lend` checks every copy under the locks and only then mutates any of them, so a stack is all-or-nothing. The concurrency test fires 30 members at a single copy and asserts exactly one loan, with the copy's `borrower_id` equal to that winner.
 
-**The quota, which is the race candidates miss.** The five-item limit lives on the *account*, not on any copy, so per-copy locks alone would let two concurrent checkouts push a member to six. `checkout` therefore claims the slots under the ledger lock first, takes the copies second, and releases the slots if the copies are gone. The second concurrency test fires 12 single-book checkouts from one account and asserts that exactly five succeed.
+**The quota, which is the race candidates miss.** The five-item limit lives on the *account*, not on any copy, so per-copy locks alone would let two concurrent checkouts push a member to six. `checkout` therefore claims the slots under the ledger lock first, takes the copies second, and releases the slots if the copies are gone. Release exactly what you claimed, not the whole scan — a barcode the card already held never took a slot, so subtracting it would hand back quota for a book that is still out. The second concurrency test fires 12 single-book checkouts from one account and asserts that exactly five succeed.
 
 **The hold queue.** Promotion happens under the ledger lock and the copy is claimed afterwards, never the other way round — that is what keeps the two lock families from nesting. If the copy vanished in between, `_offer` demotes the reservation back to `WAITING` at its original position in the list, so nobody loses their place. On a return the copy is still `LOANED` while the queue is popped, so the window is not a race at all.
 
@@ -403,7 +403,7 @@ C-001 marked lost -> fee 30.00 USD, copy is lost
 
 ## Tests
 
-`tests/test_library_management.py` has 22 cases. The hold queue is the one to walk through, because it exercises the copy lifecycle, the FIFO order and the notification in one scenario:
+`tests/test_library_management.py` has 23 cases. The hold queue is the one to walk through, because it exercises the copy lifecycle, the FIFO order and the notification in one scenario:
 
 ```python title="code/lld/library_management/tests/test_library_management.py — the hold queue"
 --8<-- "code/lld/library_management/tests/test_library_management.py:holds"
@@ -415,7 +415,7 @@ The two concurrency tests pin the two different invariants — one copy, one loa
 --8<-- "code/lld/library_management/tests/test_library_management.py:concurrency"
 ```
 
-The rest cover: the checkout-to-return state walk; search across title, author, ISBN and subject via `parametrize`; the caching proxy hitting, missing and invalidating; the member limit, the librarian limit and the blocked-then-paid cycle; expired holds passing the copy down the queue; renewal blocked by the cap and by a waiting hold; a cancelled hold releasing the copy; lost and damaged copies leaving circulation; and all three fine policies with grace periods and caps. Run them with `uv run pytest code/lld/library_management -q`.
+The rest cover: the checkout-to-return state walk; search across title, author, ISBN and subject via `parametrize`; the caching proxy hitting, missing and invalidating; the member limit, the librarian limit and the blocked-then-paid cycle; a re-scan of a copy already on the card, which must roll back only the slots *this* checkout claimed; expired holds passing the copy down the queue; renewal blocked by the cap and by a waiting hold; a cancelled hold releasing the copy; lost and damaged copies leaving circulation; and all three fine policies with grace periods and caps. Run them with `uv run pytest code/lld/library_management -q`.
 
 ## 45-minute pacing
 

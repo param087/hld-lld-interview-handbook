@@ -110,7 +110,9 @@ def main() -> None:
 
     scheduler.cancel(digest.id)
     scheduler.cancel(heartbeat.id)
-    print(f"cancelled digest and heartbeat: heap still holds {scheduler.pending()} tombstoned entries")
+    entries = scheduler.pending()  # one live entry per still-SCHEDULED task; the rest are tombstones
+    live = sum(1 for task in scheduler.tasks() if task.status is TaskStatus.SCHEDULED)
+    print(f"cancelled digest and heartbeat: heap holds {entries} entries, {entries - live} tombstoned")
 
     scheduler.shutdown()
     done = sum(1 for task in scheduler.tasks() if task.status is TaskStatus.SUCCEEDED)

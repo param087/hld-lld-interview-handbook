@@ -56,6 +56,29 @@ def test_lfu_evicts_the_least_used_and_breaks_ties_by_recency(clock: FakeClock) 
     assert cache.get("b") is None and cache.get("d") == 3
 
 
+def test_lfu_min_freq_survives_promoting_the_last_key_at_the_minimum(clock: FakeClock) -> None:
+    """Reading the only key in the minimum bucket must move `_min_freq` up by one.
+
+    Recomputing it as `min(buckets)` at that moment looks at the buckets *before*
+    the promoted node is re-filed, so the pointer lands on a higher bucket (or on
+    nothing at all) and the next eviction either crashes or throws out the most
+    used key instead of the least.
+    """
+    policy = LFUPolicy()
+    policy.on_insert("a")
+    policy.on_insert("b")
+    policy.on_access("b")
+    policy.on_access("b")  # b is at frequency 3, a is alone at the minimum
+    policy.on_access("a")  # promoting a drains the minimum bucket
+    assert policy.evict() == "a"  # a has 2 uses, b has 3
+
+    cache: Cache[str, int] = Cache(capacity=1, policy=LFUPolicy(), clock=clock)
+    cache.put("a", 1)
+    cache.get("a")
+    cache.put("b", 2)  # used to raise KeyError(0) from a dangling _min_freq
+    assert cache.keys() == ["b"]
+
+
 @pytest.mark.parametrize(
     ("policy_name", "evicted", "kept"),
     [("lru", "b", "a"), ("fifo", "a", "b"), ("lfu", "b", "a")],

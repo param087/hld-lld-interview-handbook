@@ -47,8 +47,9 @@ class MinimalChangeMaker:
     """Fewest coins that add up, searching every count of every denomination.
 
     Complete: it finds a combination whenever one exists. The search is memoised
-    on (denomination index, remaining amount), so the cost is bounded by the
-    number of denominations times the amount, not by the number of coins.
+    on (denomination index, remaining amount), so the number of distinct
+    sub-problems is the number of denominations times the amount - a fixed
+    ceiling that does not grow with how full the cash box is.
     """
 
     name = "minimal"

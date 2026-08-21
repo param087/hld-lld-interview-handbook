@@ -14,7 +14,7 @@ Attach responsibilities to an object at runtime by wrapping it in another object
 
 - Responsibilities are optional and combinable. Three add-ons give seven non-empty combinations as subclasses, ignoring order and repetition, and "two extra shots" needs a subclass per count; as decorators they are three classes.
 - A cross-cutting behaviour must wrap an interface you do not want to touch: retries, caching, auditing, rate limiting or compression around any sender, cache or stream.
-- The stack differs per instance: this tenant gets retries, that one gets retries and an audit trail, decided at wiring time rather than in a class hierarchy.
+- The stack differs per instance: this tenant gets retries, that one retries plus an audit trail, decided at wiring time, not in a hierarchy.
 
 **Leave it out when**
 
@@ -184,10 +184,10 @@ The structural patterns all wrap something; classify by two questions: does the 
 ## Where it appears in LLD problems
 
 - [Design a vending machine (and a coffee machine)](../problems/vending-machine.md) — add-ons as decorators over a base drink; price and description compose.
-- [Design an in-memory cache (LRU, LFU, TTL)](../problems/in-memory-cache.md) — TTL, metrics and write-through layered over one cache interface.
-- [Design a notification service (LLD)](../problems/notification-service.md) — retry, rate limit and de-duplication wrapped around a channel.
-- [Design a logging framework](../problems/logging-framework.md) — buffering and filtering wrappers around a handler.
-- [Design a rate limiter (LLD)](../problems/rate-limiter-lld.md) — the limiter as a decorator around any handler.
+- [Design an in-memory cache (LRU, LFU, TTL)](../problems/in-memory-cache.md) — `LoadingCache` wraps any cache with read-through loading.
+- [Design a notification service (LLD)](../problems/notification-service.md) — `CircuitBreakerSender` wraps a channel sender; the rate limit and dedup are pipeline stages there.
+- [Design a logging framework](../problems/logging-framework.md) — `AsyncHandler` wraps any handler to make it non-blocking.
+- [Design a rate limiter (LLD)](../problems/rate-limiter-lld.md) — the counter-example: it rejects a per-handler `@rate_limit` for a middleware stage.
 
 ## Interview tips
 

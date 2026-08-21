@@ -424,7 +424,7 @@ The order is always machine lock first, stock lock second. Stock objects never c
 
 ## Tests
 
-`tests/test_vending_machine.py` has 16 cases. The one to walk through is the jam, because it proves the refund path; the parametrized rejection test is the one that proves "validate first, transition last":
+`tests/test_vending_machine.py` has 24 cases. The one to walk through is the jam, because it proves the refund path; the parametrized rejection test is the one that proves "validate first, transition last":
 
 ```python title="code/lld/vending_machine/tests/test_vending_machine.py — a jammed dispense"
 --8<-- "code/lld/vending_machine/tests/test_vending_machine.py:jam"

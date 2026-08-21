@@ -222,7 +222,7 @@ sequenceDiagram
     G->>G: advance_turn only if the frame closed
     G->>C: score(frames)
     C-->>G: card with provisional totals
-    G-)B: on_event, delivered outside the lock
+    G-)B: on_event, buffered then flushed
     G-->>R: FrameScore
 ```
 
@@ -307,7 +307,7 @@ The alley is the pool. `reserve` finds and claims a lane inside one lock, which 
 --8<-- "code/lld/bowling_alley/services.py:alley"
 ```
 
-Running `python -m lld.bowling_alley.demo` books a lane, bowls a textbook card against nine strikes, and shows the provisional totals settling:
+Running `python -m lld.bowling_alley.demo` books a lane, bowls the textbook 133 card against a perfect game, and shows the provisional totals settling:
 
 ```text
 --- Sunset Lanes: BK-1 on L1, 2 lanes still free ---
@@ -317,8 +317,8 @@ Ana   frame  5   39*  14 45 6/ 5/
 Bo    frame  5   90*  X X X X
 --- final cards ---
 Ana   frame 10  133   14 45 6/ 5/ X -1 7/ 6/ X 2/6
-Bo    frame 10  297   X X X X X X X X X XX7
-won: Bo beats Ana 297 to 133 in 31 rolls
+Bo    frame 10  300   X X X X X X X X X XXX
+won: Bo beats Ana 300 to 133 in 31 rolls
 tenth frame: Ana threw 3, Bo threw 3
 --- rejections ---
 too many pins: InvalidPinCountError: frame 1: 5 pins, but 3 are standing
@@ -326,7 +326,7 @@ game over: InvalidStateError: game is won; no turn can be played
 lane L1 is free, 3 lanes free
 ```
 
-Point at the middle block in the interview. After four frames Ana's total reads 39 with a star: her fourth-frame spare is worth ten plus a ball she has not thrown yet. Bo's 90 is provisional for the same reason across three of his four strikes. Both settle to 133 and 297 without a single cache being invalidated.
+Point at the middle block in the interview. After four frames Ana's total reads 39 with a star: her fourth-frame spare is worth ten plus a ball she has not thrown yet. Bo's 90 is provisional for the same reason across three of his four strikes. Both settle — to 133 and to the perfect 300 — without a single cache being invalidated.
 
 ## Concurrency and edge cases
 

@@ -409,7 +409,7 @@ That table is the reason the clock is injected. FCFS is worst on both measures; 
 
 ## Tests
 
-`tests/test_elevator_system.py` has 14 cases covering the happy path, validation, the state machine, both concurrency invariants and the awkward edges. The two worth walking through in the room are the LOOK sweep and the concurrent presses:
+`tests/test_elevator_system.py` has 18 cases covering the happy path, validation, the state machine, both concurrency invariants and the awkward edges. The two worth walking through in the room are the LOOK sweep and the concurrent presses:
 
 ```python title="code/lld/elevator_system/tests/test_elevator_system.py — the LOOK sweep"
 --8<-- "code/lld/elevator_system/tests/test_elevator_system.py:sweep"
@@ -419,7 +419,7 @@ That table is the reason the clock is injected. FCFS is worst on both measures; 
 --8<-- "code/lld/elevator_system/tests/test_elevator_system.py:concurrency"
 ```
 
-The rest cover: a hall call served end to end with the passenger boarding and pressing a destination; floors outside the building rejected; the exact five-tick state sequence of one car; a duplicate press producing one served call; an emergency stop re-homing the call it owed; every car in maintenance; an obstructed door holding the floor and then releasing it; a full car handing its passenger back to the bank; boarding over the rated load; and the four strategies choosing different cars for the same snapshot. Run them with `uv run pytest code/lld/elevator_system -q`.
+The rest cover: a hall call served end to end with the passenger boarding and pressing a destination; floors outside the building rejected; the exact six-tick state sequence of one car; a duplicate press producing one served call; an emergency stop re-homing the call it owed; every car in maintenance; an obstructed door holding the floor and then releasing it; a full car handing its passenger back to the bank; boarding over the rated load; three strategies picking three different cars, destination dispatch grouping two passengers bound for the same floor, and the display following every car without polling. Run them with `uv run pytest code/lld/elevator_system -q`.
 
 ## 45-minute pacing
 

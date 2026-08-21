@@ -346,7 +346,7 @@ Sizing is the other follow-up worth rehearsing. The 80/20 rule from the estimati
 
 ## Tests
 
-`tests/test_in_memory_cache.py` has 17 cases. The two worth walking an interviewer through are the capacity invariant under load and the stampede.
+`tests/test_in_memory_cache.py` has 18 cases. The two worth walking an interviewer through are the capacity invariant under load and the stampede.
 
 ```python title="code/lld/in_memory_cache/tests/test_in_memory_cache.py — capacity under concurrency"
 --8<-- "code/lld/in_memory_cache/tests/test_in_memory_cache.py:concurrency"
@@ -360,7 +360,7 @@ The assertion that matters is not `len(cache) == 50`, which a lucky race would s
 
 A `threading.Barrier` makes the stampede deterministic: all sixteen threads arrive at the miss together instead of trickling in after the first one has already filled the cache.
 
-The rest cover: LRU eviction order and its stats; LFU eviction with the frequency tie broken by recency; a parametrized case where LRU, LFU and FIFO disagree about a key that was written first and then read; lazy expiry with `KeyMissingError` from the strict accessor; active purge; rejected capacities and TTLs; delete-and-overwrite keeping both structures in step; a loader failure that is retried rather than cached; the sweeper reclaiming in the background and stopping within its timeout; and the sharded cache splitting its capacity. Run them with `uv run pytest code/lld/in_memory_cache -q`.
+The rest cover: LRU eviction order and its stats; LFU eviction with the frequency tie broken by recency; reading the *only* key in the minimum bucket, which is the one promotion that has to move `_min_freq` by hand; a parametrized case where LRU, LFU and FIFO disagree about a key that was written first and then read; lazy expiry with `KeyMissingError` from the strict accessor; active purge; rejected capacities and TTLs; delete-and-overwrite keeping both structures in step; a loader failure that is retried rather than cached; the sweeper reclaiming in the background and stopping within its timeout; and the sharded cache splitting its capacity. Run them with `uv run pytest code/lld/in_memory_cache -q`.
 
 ## 45-minute pacing
 
