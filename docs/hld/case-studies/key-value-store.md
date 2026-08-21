@@ -246,23 +246,23 @@ Say the numbers: a sixth node on a five-node ring moves ~1/6 of the keys, all *o
 
 ## Deep dive: tunable N/W/R quorums
 
-The probing question is "what do W and R buy me, and what does W + R > N actually guarantee?"
+The probing question is "what do W and R buy, and what does W + R > N guarantee?"
 
 | Setting | Write latency | Read latency | What you get | Typical use |
 |---|---|---|---|---|
 | N=3, W=1, R=1 | Fastest | Fastest | Stale reads likely; one replica holds the only copy | Caches, counters you can lose |
-| N=3, W=2, R=2 | One round trip, second-fastest ack | Same | Read and write quorums overlap: the latest acknowledged write is in the answer set | The default |
+| N=3, W=2, R=2 | One round trip, second-fastest ack | Same | Quorums overlap: the latest acknowledged write is in the answer set | The default |
 | N=3, W=3, R=1 | Slowest, fails if any replica is down | Fastest | Read-heavy keys; writes stall on one slow replica | Configuration data |
 | N=3, W=1, R=3 | Fastest | Slowest, fails if any replica is down | Write-heavy keys | Event ingestion |
 
-The overlap argument is the whole point: with W + R > N the write quorum and the read quorum share a node, so the newest version is among the R answers and the clock comparison picks it out. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md), whose `quorum_overlaps` check the module exposes as `KVCluster.overlapping`.
+The overlap argument is the whole point: with W + R > N the write and read quorums share a node, so the newest version is among the R answers. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md); `KVCluster.overlapping` runs that check.
 
 Four nuances worth volunteering:
 
-- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, at the cost of N replica operations per request — the number that sized the cluster.
-- **W + R > N is not linearizability.** Concurrent writes both succeed and are both recorded rather than ordered (deep dive 3), and a sloppy quorum can acknowledge on a stand-in that a later read quorum never contacts (deep dive 4).
-- **Durability is W, not N.** When the client hears "ok" two WALs hold the write; the third copy arrives via the late acknowledgement or a hint.
-- **The budget is one round trip.** A write is an fsync-ed WAL append plus one same-datacenter hop (~500 µs) for the second acknowledgement; a read adds ~16 µs of SSD per SSTable consulted. Both sit far inside the 10/20 ms p99, which is spent queueing behind the slowest of two replicas.
+- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, at the cost of N replica operations per request.
+- **W + R > N is not linearizability.** Concurrent writes both succeed and are recorded, not ordered (deep dive 3), and a sloppy quorum can acknowledge on a stand-in no read quorum contacts (deep dive 4).
+- **Durability is W, not N.** When the client hears "ok" two WALs hold the write; the third copy arrives via a late acknowledgement or a hint.
+- **The budget is one round trip.** A write is an fsync-ed WAL append plus one same-datacenter hop (~500 µs) for the second acknowledgement, a read ~16 µs of SSD per SSTable consulted — both far inside the 10/20 ms p99.
 
 ## Deep dive: versioning with vector clocks and read repair
 
@@ -296,7 +296,7 @@ The probing question is "a node dies mid-afternoon; walk me through the next hou
 | Read repair | Stale replicas of hot keys | On the next read | One extra write per stale answer |
 | Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hashes compared in proportion to differences, not data |
 
-**Gossip** spreads membership: a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D — the write still reaches W nodes, so the client is never refused, and that sloppy quorum is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E streams the hinted versions over and drops its copy. If E dies first the hint is lost, and **anti-entropy** compares Merkle trees of the range A and D share, descending only into subtrees whose hashes differ: one lost update among 200 keys, found in 13 hash comparisons.
+**Gossip** spreads membership: a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D — the write still reaches W, so the client is never refused, and that sloppy quorum is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E hands the hinted versions over. If E dies first the hint is lost and **anti-entropy** compares Merkle trees of the range A and D share, descending only where hashes differ: one lost update among 200 keys, found in 13 comparisons.
 
 The cluster class ties it together — `put` records hints, `recover` hands them off, `anti_entropy` repairs what the hints missed:
 
@@ -395,22 +395,20 @@ What breaks first, and what you do about it:
 
 - **Hot keys.** A viral key lands on exactly N nodes however large the cluster is: consistent hashing spreads keys, not popularity. Cache those keys, salt write-hot counters (`key#0..key#9`, merged on read), or move their tokens to quieter nodes.
 - **Tail latency.** One replica in a long compaction or GC pause slows every quorum it joins; speculative retries after a p99 timeout and throttled compaction cover what waiting for R does not.
-- **Sibling explosion.** A client writing without a context creates siblings faster than anyone merges them: cap siblings per key, alert, fix the client.
-- **Tombstone and hint accumulation.** Deletes are writes, so a range full of them reads slowly until compaction purges tombstones past the grace period. Hints expire on a TTL, so a node down for days is repaired by anti-entropy rather than by a flood on its return.
-- **Membership churn.** A flapping node triggers hint storms and repairs, so gossip marks it suspect and leaves the ring alone until an operator decides. A split brain keeps accepting writes on both sides — the AP promise, paid for in siblings.
+- **Sibling, tombstone and hint growth.** A client writing without a context outruns whoever merges siblings, so cap and alert on them. Deletes are writes, so a range full of them reads slowly until compaction purges tombstones past the grace period, and hints expire on a TTL so a node down for days is repaired by anti-entropy rather than a flood on its return.
+- **Membership churn.** A flapping node triggers hint storms, so gossip marks it suspect and leaves the ring alone until an operator decides; adding a node streams ~1/N of the data, throttled, and it serves reads only once its ranges are complete. A split brain keeps accepting writes on both sides — the AP promise, paid for in siblings.
 - **Cross-region.** Replicate asynchronously with N=3 per region and local quorums (`LOCAL_QUORUM`): a ~70-150 ms cross-region hop inside every write would blow the 20 ms budget. Inter-region conflicts are ordinary siblings.
-- **Rebalancing cost.** Adding a node streams ~1/N of the data; throttle the stream and serve reads only once its ranges are complete, or it answers with gaps that look like deletes.
 
 ## Trade-offs summary
 
 | Decision | Chosen | Alternatives | Why |
 |---|---|---|---|
-| Topology | Leaderless, any replica coordinates | Single leader per partition (Raft, Bigtable) | Always writable, no failover pause; the price is conflict resolution |
-| Partitioning | Consistent hashing with virtual nodes | Range partitioning, hash mod N | ~1/N keys move on a membership change, spread over all nodes |
-| Replica placement | Preference list of N distinct, rack-aware nodes | Next N tokens | Two replicas on one machine or rack is one failure, not two |
-| Consistency knob | Tunable W and R, default 2/2 of 3 | Fixed strong or fixed eventual | Overlapping quorums where it matters, speed where it does not |
+| Topology | Leaderless, any replica coordinates | Single leader per partition (Raft, Bigtable) | Always writable, no failover pause; the price is conflicts |
+| Partitioning | Consistent hashing with virtual nodes | Range partitioning, hash mod N | ~1/N keys move on a membership change |
+| Replica placement | Preference list of N distinct, rack-aware nodes | Next N tokens | Two replicas on one rack is one failure, not two |
+| Consistency knob | Tunable W and R, default 2/2 of 3 | Fixed strong or fixed eventual | Overlap where it matters, speed where it does not |
 | Versioning | Vector clocks with client-side merge; LWW opt-in | LWW everywhere | LWW silently loses concurrent updates and trusts clocks |
-| Availability under failure | Sloppy quorum + hinted handoff | Strict quorum (refuse writes) | Writes continue through an outage; the hint repays the debt |
+| Availability under failure | Sloppy quorum + hinted handoff | Strict quorum (refuse writes) | Writes survive an outage; the hint repays the debt |
 | Repair | Read repair + scheduled Merkle anti-entropy | Full replica comparison | Cost scales with differences, not data size |
 | Storage engine | LSM tree per node | B-tree | Append-only writes, Bloom-filtered point reads |
 

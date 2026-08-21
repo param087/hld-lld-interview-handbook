@@ -61,9 +61,9 @@ class Segment:
     """One segment file plus the sparse index into it.
 
     Records are written at increasing byte positions and never moved. ``_index`` keeps one
-    ``(offset, position)`` pair per ``index_interval`` bytes, so the index of a 1 GB segment
-    costs a few hundred KB instead of one entry per record; a lookup bisects it and scans
-    forward from the entry it lands on. Not thread-safe on its own: the owning ``SegmentedLog``
+    ``(offset, position)`` pair per ``index_interval`` bytes, so the index of a 1 GB segment is
+    1 GB / 4 KB = ~256k entries of 8 B = ~2 MB instead of one entry per record; a lookup
+    bisects it and scans forward. Not thread-safe on its own: the owning ``SegmentedLog``
     serialises every call with its lock.
     """
 

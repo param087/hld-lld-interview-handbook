@@ -242,7 +242,7 @@ The probing question is "why is a broker fast if it writes every message to disk
 
 Sequential access is the whole trick. A seek is ~2 ms and an HDD manages ~100 random IOPS, but the same disk streams ~150 MB/s sequentially and an NVMe SSD 2-7 GB/s. Appending to one file per partition turns "100k messages a second" into a few large sequential writes: hence ~100 MB/s in and ~1 GB/s out per broker.
 
-Cutting the log into **segments** makes maintenance a file operation: retention deletes whole files, and a replica rolling back after an election truncates the tail. Each has a **sparse index**, one `(offset, byte position)` pair per 4 KB rather than per record, so a 1 GB segment indexes in a few hundred KB and a lookup is a bisect plus a short scan.
+Cutting the log into **segments** makes maintenance a file operation: retention deletes whole files, and a replica rolling back after an election truncates the tail. Each has a **sparse index**, one `(offset, byte position)` pair per 4 KB rather than per record: 1 GB / 4 KB is ~256k entries of 8 B, so a 1 GB segment indexes in ~2 MB and a lookup is a bisect plus a short scan.
 
 **Inside a broker: the common request path never leaves the page cache.**
 
