@@ -171,6 +171,7 @@ nav:
           - Design a metrics monitoring and alerting system: hld/case-studies/metrics-monitoring.md
           - Design an ad click aggregation system: hld/case-studies/ad-click-aggregation.md
           - Design a Top-K heavy hitters service: hld/case-studies/top-k-heavy-hitters.md
+          - Design a real-time gaming leaderboard: hld/case-studies/leaderboard.md
           - Design a distributed cache: hld/case-studies/distributed-cache.md
           - Design S3 (with a GFS/HDFS variant): hld/case-studies/object-storage.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
@@ -179,6 +180,7 @@ nav:
           - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
           - Design Gmail: hld/case-studies/email-service.md
           - Design a stock exchange: hld/case-studies/stock-exchange.md
+          - Design LeetCode (online judge): hld/case-studies/online-judge.md
   - LLD:
       - lld/index.md
       - Fundamentals:
@@ -244,15 +246,28 @@ nav:
           - Design a car rental system: lld/problems/car-rental.md
           - Design a logging framework: lld/problems/logging-framework.md
           - Design an in-memory pub/sub message queue: lld/problems/pub-sub-system.md
+          - Design a food delivery system (Swiggy, Zomato, DoorDash): lld/problems/food-delivery.md
           - Design Stack Overflow: lld/problems/stack-overflow.md
+          - Design Cricinfo (live scoreboard): lld/problems/cricinfo.md
           - Design a traffic signal controller: lld/problems/traffic-signal.md
+          - Design a text editor with undo and redo: lld/problems/text-editor.md
           - Design a task scheduler (cron, LLD): lld/problems/task-scheduler.md
           - Design a payment gateway and digital wallet: lld/problems/payment-gateway-wallet.md
+          - Design an online auction: lld/problems/online-auction.md
           - Design a restaurant management system: lld/problems/restaurant-management.md
           - Design an in-memory key-value store with transactions: lld/problems/kv-store-transactions.md
+          - Design a bowling alley: lld/problems/bowling-alley.md
   - Cheatsheets:
       - cheatsheets/index.md
       - Latency numbers and estimation tables: cheatsheets/latency-and-estimation.md
+      - Database selection matrix: cheatsheets/database-selection-matrix.md
+      - Queue and stream selection: cheatsheets/messaging-selection.md
+      - Problem to pattern quick reference: cheatsheets/pattern-quick-reference.md
+      - HLD round checklist: cheatsheets/hld-checklist.md
+      - LLD round checklist: cheatsheets/lld-checklist.md
+      - Clarifying-question bank: cheatsheets/questions-to-ask.md
   - Mock interviews:
       - mocks/index.md
+      - "Mock HLD interview: news feed": mocks/mock-hld-news-feed.md
+      - "Mock LLD interview: parking lot": mocks/mock-lld-parking-lot.md
 # END-NAV

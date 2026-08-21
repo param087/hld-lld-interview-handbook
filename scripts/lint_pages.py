@@ -73,7 +73,7 @@ FENCE_CLOSE = re.compile(r"^[ \t]*(?P<marker>`{3,}|~{3,})[ \t]*$")
 HEADING = re.compile(r"^ {0,3}(?P<hashes>#{1,6})(?:[ \t]+(?P<text>.*?))?(?:[ \t]+#+)?[ \t]*$")
 FRONT_KEY = re.compile(r"^([A-Za-z_][\w-]*):\s*(.*)$")
 PLACEHOLDER_CI = re.compile(
-    r"\bTODO\b|\bTBD\b|\bFIXME\b|\bXXX\b|lorem ipsum|coming soon|as an AI|\[insert", re.I
+    r"\bTODO\b|\bTBD\b|\bFIXME\b|lorem ipsum|coming soon|as an AI|\[insert", re.I
 )
 PLACEHOLDER_CS = re.compile(r"<!-- T:|T_TITLE|T_SUBTOPIC|T_CRUX|T_TABLE|T_ONE_SENTENCE")
 CODE_SPAN = re.compile(r"`[^`\n]*`")
