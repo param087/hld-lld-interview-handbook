@@ -131,9 +131,6 @@ def test_people_you_may_know_ranks_second_degree_by_mutual_connections(net: Netw
 # --8<-- [start:crossing]
 def test_crossing_requests_auto_accept_exactly_once(net: Network) -> None:
     """Twenty threads, ten each way: one edge, one accepted request, no duplicates."""
-    outcomes: list[str] = []
-    lock = ThreadPoolExecutor  # imported for clarity; the assertions do the work
-
     def act(i: int) -> str:
         sender, receiver = ("ana", "ben") if i % 2 == 0 else ("ben", "ana")
         try:
@@ -141,7 +138,7 @@ def test_crossing_requests_auto_accept_exactly_once(net: Network) -> None:
         except (DuplicateRequestError, AlreadyConnectedError) as exc:
             return type(exc).__name__
 
-    with lock(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=10) as pool:
         outcomes = list(pool.map(act, range(20)))
 
     assert outcomes.count(RequestStatus.PENDING) == 1  # exactly one request was created
@@ -191,7 +188,7 @@ def test_feed_shows_the_audience_intersected_with_each_posts_visibility(net: Net
     first_degree = feed.publish("ben", "ben ships", Visibility.CONNECTIONS)
     net.clock.advance(10)
     public = feed.publish("cara", "cara hires", Visibility.PUBLIC)
-    feed.publish("cara", "cara offsite", Visibility.CONNECTIONS)  # followed but only 2nd degree
+    offsite = feed.publish("cara", "cara offsite", Visibility.CONNECTIONS)  # followed, 2nd degree
     feed.publish("dev", "unreachable", Visibility.PUBLIC)  # not in the audience at all
 
     assert [p.id for p in feed.feed("ana")] == [public.id, first_degree.id, mine.id]
@@ -200,9 +197,7 @@ def test_feed_shows_the_audience_intersected_with_each_posts_visibility(net: Net
     assert len(first_degree.reactions) == 1
     assert [p.id for p in feed.feed("ana", EngagementFeed())][0] == first_degree.id
     with pytest.raises(PrivacyError):
-        feed.react(public.id, "dev", Visibility.PUBLIC) if False else feed.comment(
-            "unknown", "dev", "hi"
-        )
+        feed.comment(offsite.id, "dev", "nice")  # dev is out of cara's network
 
 
 def test_messaging_respects_the_recipients_policy(net: Network) -> None:

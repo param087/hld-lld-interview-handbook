@@ -53,7 +53,7 @@ def main() -> None:
     fs.cp("/srv/app", "/backup")
     print(f"cp -r /srv/app /backup -> {fs.ls('/backup')}, {fs.size('/backup')}B")
     removed = fs.rm("/srv", recursive=True)
-    print(f"rm -r /srv -> status={removed.status is NodeStatus.RELEASED}, root now {fs.ls('/')}")
+    print(f"rm -r /srv -> status={removed.status}, released={removed.status is NodeStatus.RELEASED}, root now {fs.ls('/')}")
     print(fs.tree("/backup"))
 
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Protocol
 
 from common import Clock
@@ -66,6 +68,12 @@ class Node(ABC):
             parts.append(node.name)
             node = node.parent
         return "/" + "/".join(reversed(parts))
+
+    @contextmanager
+    def locked(self) -> Iterator[None]:
+        """Public handle on this node's lock, so services can order acquisitions."""
+        with self._lock:
+            yield
 
     def touch(self, now: float) -> None:
         with self._lock:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -15,8 +14,8 @@ from lld.in_memory_file_system.models import (
     NotADirectoryError_,
     PathExistsError,
     PathNotFoundError,
-    PermissionDeniedError,
     Permission,
+    PermissionDeniedError,
     RecursiveMoveError,
     SizeReport,
     User,
@@ -65,21 +64,24 @@ class FileSystem:
 
     # --- directories ---------------------------------------------------------------
     def mkdir(self, path: str, parents: bool = True, cwd: str = ROOT) -> Directory:
-        """``mkdir -p``. Idempotent, and safe when two threads race on the same path."""
+        """``mkdir -p`` by default: idempotent, and safe when two threads race on it."""
         parts = PathResolver.split(path, cwd)
         if not parts:
             return self.root
         node: Directory = self.root
         for index, part in enumerate(parts):
+            last = index == len(parts) - 1
             existing = node.get(part)
-            if existing is not None and not existing.is_directory():
-                raise NotADirectoryError_(f"{existing.path()} is a file")
-            if existing is None and not parents and index < len(parts) - 1:
+            if existing is not None:
+                if not existing.is_directory():
+                    raise NotADirectoryError_(f"{existing.path()} is a file")
+                if last and not parents:
+                    raise PathExistsError(f"{existing.path()} already exists")
+                node = existing  # type: ignore[assignment]
+                continue
+            if not parents and not last:
                 raise PathNotFoundError(f"{node.path() or ROOT} has no child {part}")
-            if existing is None and not parents and self.exists(path, cwd):
-                raise PathExistsError(f"{path} already exists")
-            child = node.get_or_add(Directory(part, self._clock, self._owner))
-            node = child  # type: ignore[assignment]
+            node = node.get_or_add(Directory(part, self._clock, self._owner))  # type: ignore[assignment]
         return node
 
     def ls(self, path: str = ROOT, cwd: str = ROOT) -> list[str]:
@@ -138,8 +140,9 @@ class FileSystem:
         if node.is_directory() and not node.is_empty() and not recursive:  # type: ignore[union-attr]
             raise DirectoryNotEmptyError(f"{target} is not empty; use recursive=True")
         parent = node.parent
-        assert parent is not None  # the root was rejected above
-        with parent._lock:
+        if parent is None:  # already detached by a concurrent rm
+            raise PathNotFoundError(f"{target} is no longer linked")
+        with parent.locked():
             parent.remove(node.name)
             parent.modified = self._clock.now()
         self._unlink_subtree(node)
@@ -157,7 +160,8 @@ class FileSystem:
 
         target_parent, target_name = self._destination_for(node, dst)
         old_parent = node.parent
-        assert old_parent is not None
+        if old_parent is None:
+            raise PathNotFoundError(f"{src} is no longer linked")
         with self._two_locks(old_parent, target_parent):
             if target_parent.get(target_name) is not None:
                 raise PathExistsError(f"{PathResolver.join(target_parent.path(), target_name)} already exists")
@@ -174,7 +178,7 @@ class FileSystem:
         dst = PathResolver.normalize(destination, cwd)
         target_parent, target_name = self._destination_for(node, dst)
         clone = self._clone(node, target_name)
-        with target_parent._lock:
+        with target_parent.locked():
             target_parent.add(clone)
             target_parent.modified = self._clock.now()
         return clone
@@ -208,7 +212,7 @@ class FileSystem:
 
     def chmod(self, path: str, owner_permissions: Permission, other_permissions: Permission, cwd: str = ROOT) -> NodeStat:
         node = self.resolve(path, cwd)
-        with node._lock:
+        with node.locked():
             node.owner_permissions = owner_permissions
             node.other_permissions = other_permissions
             node.modified = self._clock.now()
@@ -255,11 +259,11 @@ class FileSystem:
     def _two_locks(self, first: Node, second: Node) -> Iterator[None]:
         """Always by absolute path: one global order means no lock cycle."""
         if first is second:
-            with first._lock:
+            with first.locked():
                 yield
             return
         low, high = sorted((first, second), key=lambda node: node.path())
-        with low._lock, high._lock:
+        with low.locked(), high.locked():
             yield
 
 
@@ -308,7 +312,7 @@ class SecureFileSystem:
         node = self._fs.resolve(path)
         granted = node.effective_permissions(self.user.name, self.user.is_admin)
         if not granted.allows(needed):
-            raise PermissionDeniedError(f"{self.user.name} lacks {needed!r} on {node.path() or ROOT}")
+            raise PermissionDeniedError(f"{self.user.name} lacks {needed.name} on {node.path() or ROOT}")
         return node
 
     def _require_parent(self, path: str, needed: Permission) -> None:

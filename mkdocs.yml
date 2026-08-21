@@ -163,6 +163,7 @@ nav:
           - Design Uber (with a DoorDash variant): hld/case-studies/ride-sharing.md
           - Design Ticketmaster (with a hotel-booking variant): hld/case-studies/ticketing-and-reservations.md
           - Design a web crawler: hld/case-studies/web-crawler.md
+          - Design a notification system: hld/case-studies/notification-system.md
           - Design typeahead autocomplete: hld/case-studies/typeahead.md
           - Design Yelp (proximity service): hld/case-studies/proximity-service.md
           - Design Nearby Friends: hld/case-studies/nearby-friends.md
@@ -178,6 +179,7 @@ nav:
           - Design a distributed job scheduler: hld/case-studies/job-scheduler.md
           - Design Amazon (e-commerce with inventory and flash sales): hld/case-studies/ecommerce-platform.md
           - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
+          - Design a search engine (with Twitter real-time search): hld/case-studies/search-engine.md
           - Design Gmail: hld/case-studies/email-service.md
           - Design a stock exchange: hld/case-studies/stock-exchange.md
           - Design LeetCode (online judge): hld/case-studies/online-judge.md
@@ -242,15 +244,19 @@ nav:
           - Design Splitwise: lld/problems/splitwise.md
           - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
           - Design a hotel management system: lld/problems/hotel-management.md
+          - Design an ATM: lld/problems/atm.md
           - Design a stock brokerage system: lld/problems/stock-brokerage.md
           - Design a car rental system: lld/problems/car-rental.md
           - Design a logging framework: lld/problems/logging-framework.md
           - Design an in-memory pub/sub message queue: lld/problems/pub-sub-system.md
           - Design a food delivery system (Swiggy, Zomato, DoorDash): lld/problems/food-delivery.md
+          - Design Uber (LLD) with driver matching: lld/problems/ride-sharing-lld.md
           - Design Stack Overflow: lld/problems/stack-overflow.md
           - Design Cricinfo (live scoreboard): lld/problems/cricinfo.md
           - Design a traffic signal controller: lld/problems/traffic-signal.md
           - Design a text editor with undo and redo: lld/problems/text-editor.md
+          - Design an in-memory file system: lld/problems/in-memory-file-system.md
+          - Design LinkedIn (social network): lld/problems/linkedin.md
           - Design a task scheduler (cron, LLD): lld/problems/task-scheduler.md
           - Design a payment gateway and digital wallet: lld/problems/payment-gateway-wallet.md
           - Design an online auction: lld/problems/online-auction.md
@@ -262,12 +268,16 @@ nav:
       - Latency numbers and estimation tables: cheatsheets/latency-and-estimation.md
       - Database selection matrix: cheatsheets/database-selection-matrix.md
       - Queue and stream selection: cheatsheets/messaging-selection.md
+      - Consistency, replication and isolation tables: cheatsheets/consistency-and-replication-tradeoffs.md
       - Problem to pattern quick reference: cheatsheets/pattern-quick-reference.md
       - HLD round checklist: cheatsheets/hld-checklist.md
       - LLD round checklist: cheatsheets/lld-checklist.md
+      - Common SDE2 mistakes in design rounds: cheatsheets/common-mistakes-sde2.md
       - Clarifying-question bank: cheatsheets/questions-to-ask.md
+      - Glossary: cheatsheets/glossary.md
   - Mock interviews:
       - mocks/index.md
       - "Mock HLD interview: news feed": mocks/mock-hld-news-feed.md
       - "Mock LLD interview: parking lot": mocks/mock-lld-parking-lot.md
+      - "Mock LLD interview: elevator system": mocks/mock-lld-elevator.md
 # END-NAV

@@ -13,6 +13,7 @@ from lld.ride_sharing.models import (
     DriverOffer,
     DriverSnapshot,
     DriverStatus,
+    Fare,
     Location,
     OfferStateError,
     OfferStatus,
@@ -109,11 +110,7 @@ class TripService:
 
     def transition(self, trip_id: str, target: TripStatus, event: str | None = None) -> Trip:
         with self._lock:
-            trip = self._trips.get(trip_id)
-            if trip is None:
-                raise UnknownTripError(f"unknown trip {trip_id}")
-            if not trip.can_move_to(target):
-                raise TripStateError(f"trip {trip_id} cannot move {trip.status} to {target}")
+            trip = self._require(trip_id, target)
             trip.status = target
         self._notify(trip, event or str(target))
         return trip
@@ -121,15 +118,52 @@ class TripService:
     def assign_driver(self, trip_id: str, driver_id: str) -> Trip:
         """REQUESTED to MATCHED, atomically. A cancelled trip refuses the driver."""
         with self._lock:
-            trip = self._trips.get(trip_id)
-            if trip is None:
-                raise UnknownTripError(f"unknown trip {trip_id}")
-            if not trip.can_move_to(TripStatus.MATCHED):
-                raise TripStateError(f"trip {trip_id} is {trip.status}, cannot be matched")
+            trip = self._require(trip_id, TripStatus.MATCHED)
             trip.status = TripStatus.MATCHED
             trip.driver_id = driver_id
             trip.matched_at = self._clock.now()
         self._notify(trip, "matched")
+        return trip
+
+    def start(self, trip_id: str) -> Trip:
+        with self._lock:
+            trip = self._require(trip_id, TripStatus.IN_PROGRESS)
+            trip.status = TripStatus.IN_PROGRESS
+            trip.started_at = self._clock.now()
+        self._notify(trip, "in_progress")
+        return trip
+
+    def finish_metering(self, trip_id: str, distance_km: float) -> Trip:
+        """Stop the meter without ending the trip, so the fare can be priced under no lock."""
+        with self._lock:
+            trip = self._require(trip_id, TripStatus.COMPLETED)
+            trip.ended_at = self._clock.now()
+            trip.distance_km = distance_km
+            return trip
+
+    def complete(self, trip_id: str, fare: Fare) -> Trip:
+        with self._lock:
+            trip = self._require(trip_id, TripStatus.COMPLETED)
+            trip.fare = fare
+            trip.status = TripStatus.COMPLETED
+        self._notify(trip, "completed")
+        return trip
+
+    def cancel(self, trip_id: str, fee: Money) -> Trip:
+        with self._lock:
+            trip = self._require(trip_id, TripStatus.CANCELLED)
+            trip.status = TripStatus.CANCELLED
+            trip.cancellation_fee = fee
+        self._notify(trip, "cancelled")
+        return trip
+
+    def _require(self, trip_id: str, target: TripStatus) -> Trip:
+        """Caller holds the lock. Fetch the trip and assert the move is legal."""
+        trip = self._trips.get(trip_id)
+        if trip is None:
+            raise UnknownTripError(f"unknown trip {trip_id}")
+        if not trip.can_move_to(target):
+            raise TripStateError(f"trip {trip_id} cannot move {trip.status} to {target}")
         return trip
 
     def _notify(self, trip: Trip, event: str) -> None:
@@ -220,7 +254,9 @@ class MatchingService:
                 return live[0]
             queue = self._shortlists.get(trip_id)
         if queue is None:
-            queue = self._shortlists.setdefault(trip_id, self.shortlist(request))
+            candidates = self.shortlist(request)  # index read, dispatch lock released
+            with self._lock:
+                queue = self._shortlists.setdefault(trip_id, candidates)
         with self._lock:
             while queue:
                 driver = self._drivers.get(queue.pop(0))
