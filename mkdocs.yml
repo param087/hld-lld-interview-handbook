@@ -275,9 +275,11 @@ nav:
       - Common SDE2 mistakes in design rounds: cheatsheets/common-mistakes-sde2.md
       - Clarifying-question bank: cheatsheets/questions-to-ask.md
       - Glossary: cheatsheets/glossary.md
+      - Off-the-shelf building blocks: cheatsheets/building-blocks-quick-reference.md
   - Mock interviews:
       - mocks/index.md
       - "Mock HLD interview: news feed": mocks/mock-hld-news-feed.md
       - "Mock LLD interview: parking lot": mocks/mock-lld-parking-lot.md
       - "Mock LLD interview: elevator system": mocks/mock-lld-elevator.md
+      - "Mock LLD interview: movie ticket booking": mocks/mock-lld-movie-ticket-booking.md
 # END-NAV

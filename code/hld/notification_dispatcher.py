@@ -46,11 +46,9 @@ class ChannelName(StrEnum):
 
 
 class Priority(IntEnum):
-    """Only ``CRITICAL`` overrides quiet hours; a marketing blast never does."""
-
     MARKETING = 0
     NORMAL = 1
-    CRITICAL = 2
+    CRITICAL = 2  # the only level that overrides quiet hours and the per-user rate limit
 
 
 class Outcome(StrEnum):
@@ -98,7 +96,7 @@ class Preferences:
         return start <= hour < end if start < end else hour >= start or hour < end
 
     def next_open_hour(self, epoch_seconds: float) -> float:
-        """Epoch seconds of the moment quiet hours end, so deferral is a timestamp, not a guess."""
+        """When quiet hours end, so a deferral is a timestamp rather than a guess."""
         if self.quiet_hours is None:
             return epoch_seconds
         _, end = self.quiet_hours
@@ -134,12 +132,10 @@ class Channel(Protocol):
 
 # --8<-- [start:registry]
 class DeviceRegistry:
-    """Addresses per (user, channel); ``_lock`` guards ``_addresses``.
-
-    Push tokens rot: users reinstall, change device, revoke permission. APNs and FCM answer a
-    send to a dead token with a permanent error, and the only correct reaction is to delete it.
-    A registry that never prunes spends most of its push budget on devices that no longer exist.
-    """
+    """Addresses per (user, channel); ``_lock`` guards ``_addresses``. Push tokens rot -- users
+    reinstall, change device, revoke permission -- and APNs and FCM answer a send to a dead
+    token with a permanent error. A registry that never prunes spends most of its push budget
+    on devices that no longer exist."""
 
     def __init__(self) -> None:
         self._addresses: dict[tuple[str, ChannelName], list[str]] = {}
@@ -176,11 +172,9 @@ class _Pending:
 
 
 class NotificationDispatcher:
-    """Admission chain, one queue per channel, retries with backoff, DLQ.
-
-    ``_lock`` guards every mutable field: the per-channel heaps, the dedup table, the DLQ and
-    the counters. Providers are called outside the lock, through their circuit breaker.
-    """
+    """Admission chain, one queue per channel, retries with backoff, DLQ. ``_lock`` guards every
+    mutable field: the per-channel heaps, the dedup table and the DLQ. Providers are called
+    outside the lock, through their circuit breaker."""
 
     def __init__(
         self,
@@ -332,16 +326,14 @@ class NotificationDispatcher:
 
 # --8<-- [start:channels]
 class RecordingChannel:
-    """A provider double (APNs, FCM, Twilio, SES): ``failures`` attempts fail before the send
-    succeeds, and ``dead_addresses`` are tokens the provider calls permanently unregistered."""
+    """A provider double (APNs, FCM, Twilio, SES): the first ``failures`` attempts fail, and
+    ``dead_addresses`` are tokens the provider calls permanently unregistered."""
 
-    def __init__(
-        self, name: ChannelName, failures: int = 0, dead_addresses: Sequence[str] = ()
-    ) -> None:
+    def __init__(self, name: ChannelName, failures: int = 0, dead: Sequence[str] = ()) -> None:
         self.name = name
         self.sent: list[tuple[str, str]] = []
         self._remaining_failures = failures
-        self._dead = set(dead_addresses)
+        self._dead = set(dead)
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -362,13 +354,13 @@ class RecordingChannel:
 def main() -> None:
     from common import FakeClock
 
-    midnight_utc = 1_700_000_000 - 1_700_000_000 % 86_400  # a clean 00:00 UTC boundary
-    clock = FakeClock(start=midnight_utc + 22 * SECONDS_PER_HOUR)  # 22:00 local
+    midnight = 1_700_000_000 - 1_700_000_000 % 86_400
+    clock = FakeClock(start=midnight + 22 * SECONDS_PER_HOUR)  # 22:00, inside quiet hours
     registry = DeviceRegistry()
     registry.register("u1", ChannelName.PUSH, "apns-token-a")
     registry.register("u1", ChannelName.EMAIL, "u1@example.com")
     registry.register("u2", ChannelName.PUSH, "apns-token-dead")
-    push = RecordingChannel(ChannelName.PUSH, failures=1, dead_addresses=("apns-token-dead",))
+    push = RecordingChannel(ChannelName.PUSH, failures=1, dead=("apns-token-dead",))
     email = RecordingChannel(ChannelName.EMAIL)
     dispatcher = NotificationDispatcher(
         [push, email],
