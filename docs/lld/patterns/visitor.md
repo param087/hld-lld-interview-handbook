@@ -159,7 +159,7 @@ Python can dispatch on the runtime type without the element's help, which remove
 
 - [Design an in-memory file system](../problems/in-memory-file-system.md) — `SizeVisitor` and `SearchVisitor` over `File` and `Directory`, exactly this module, with a permission audit as the follow-up.
 - [Design a learning management system](../problems/learning-management.md) — progress and total-duration visitors over courses, modules and lessons of several kinds.
-- [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — tax, shipping and discounts computed per line-item type without a growing `isinstance` ladder in the cart.
+- [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — a deliberate non-use: with one `OrderItem` type there is nothing to dispatch over, so tax, shipping and discount are [Strategy](strategy.md) objects. Visitor needs a *hierarchy*; one type means one method.
 
 ## Interview tips
 

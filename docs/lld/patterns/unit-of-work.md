@@ -211,7 +211,7 @@ When the boundary is all you need, a generator-based context manager is the whol
 
 - [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — this page's example: debit, credit and ledger entry commit together.
 - [Design Splitwise](../problems/splitwise.md) — adding an expense updates the expense store and every member's balance in one unit of work.
-- [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — order and inventory reservation commit together; payment capture is a second unit of work.
+- [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — the other way round from what you might guess: checkout keeps inventory *outside* the unit of work and compensates with `release`, while `pay` wraps the gateway call, the payment row and the order transition in one `UnitOfWork`.
 - [Design an in-memory key-value store with transactions](../problems/kv-store-transactions.md) — `BEGIN`, `COMMIT` and `ROLLBACK` over a dict: the working-copy technique, generalised to nested transactions.
 - [Design a stock brokerage system](../problems/stock-brokerage.md) — a fill updates position, cash and trade log together.
 

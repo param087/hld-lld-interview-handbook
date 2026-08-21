@@ -214,6 +214,7 @@ class WalletService(MoneyService):
         )
         if claimed is not None:
             return self._replay(claimed)
+        held = False  # True only while a committed reservation has no matching settlement
         try:
             transaction = self._new(
                 TransactionType.WITHDRAWAL, amount, wallet_account(wallet_id), PSP_CLEARING, idempotency_key
@@ -222,6 +223,7 @@ class WalletService(MoneyService):
                 uow.wallet(wallet_id).reserve(amount)  # raises before the key is completed
                 uow.track(transaction)
                 uow.commit()
+            held = True
             result = self._processors.for_method(method).authorize(method, amount, transaction.id)
             with self._store.locked(wallet_id), PaymentUnitOfWork(self._store, [wallet_id], [transaction.id]) as uow:
                 wallet, current = uow.wallet(wallet_id), uow.transaction(transaction.id)
@@ -238,10 +240,21 @@ class WalletService(MoneyService):
                     current.failure_reason = f"psp:{result.code}"
                     current.transition_to(TransactionStatus.FAILED)
                 uow.commit()
+            held = False
         except Exception:
+            # A rail that raises instead of declining is the path that strands money:
+            # the reservation is already committed, so compensate before re-raising.
+            if held:
+                self._release_reservation(wallet_id, amount)
             self._store.idempotency.release(idempotency_key)
             raise
         return self._finish(idempotency_key, transaction.id, PaymentDeclinedError)
+
+    def _release_reservation(self, wallet_id: str, amount: Money) -> None:
+        """Compensating action: give back a hold whose processor call never answered."""
+        with self._store.locked(wallet_id), PaymentUnitOfWork(self._store, [wallet_id]) as uow:
+            uow.wallet(wallet_id).release(amount)
+            uow.commit()
 
     def transfer(self, idempotency_key: str, source_id: str, target_id: str, amount: Money) -> Transaction:
         """Wallet to wallet. Both locks, always in id order, one transaction, no processor."""
@@ -351,10 +364,14 @@ class PaymentService(MoneyService):
                     f"{original.id} can refund at most {original.refundable()}, asked for {refund_amount}"
                 )
             wallet_id = wallet_id_of(original.source)
-            fee = self.fee_for(refund_amount)
             refund = Refund(self._ids.next_id(), original.id, refund_amount, idempotency_key, self._clock.now())
             with self._store.locked(wallet_id), PaymentUnitOfWork(self._store, [wallet_id], [original.id]) as uow:
                 current = uow.transaction(original.id)
+                # Reverse the *incremental* fee, not the fee on this slice alone: floor
+                # division on each slice would otherwise strand a cent in FEES when a
+                # payment is refunded in parts. Full refunds always return exactly what
+                # was charged, whatever the split.
+                fee = self.fee_for(current.refunded + refund_amount) - self.fee_for(current.refunded)
                 uow.wallet(wallet_id).credit(refund_amount)
                 current.refunded = current.refunded + refund_amount
                 current.transition_to(

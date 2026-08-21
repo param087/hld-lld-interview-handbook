@@ -116,11 +116,40 @@ def test_pre_trade_risk_rejects_without_touching_the_book() -> None:
     exchange.send(NewOrder("b1", "fund", Side.BUY, 10, 1000))  # last_price becomes 1000
     exchange.send(NewOrder("big", "fund", Side.BUY, 500, 1000))
     exchange.send(NewOrder("far", "fund", Side.BUY, 10, 2000))  # outside the +-5% collar
-    assert exchange.engine.order("big").status is OrderStatus.REJECTED
-    assert "above the 100 cap" in (exchange.engine.order("big").reject_reason or "")
+    rejected = exchange.engine.order("big")
+    assert rejected.status is OrderStatus.REJECTED
+    assert "above the 100 cap" in (rejected.reject_reason or "")
+    assert (rejected.remaining, rejected.filled_quantity) == (500, 0)  # nothing was worked
     assert exchange.engine.order("far").status is OrderStatus.REJECTED
     assert "collar" in (exchange.engine.order("far").reject_reason or "")
     assert exchange.engine.book.best(Side.BUY) is None
+
+
+def test_the_open_order_count_falls_again_when_a_resting_order_fills() -> None:
+    """The cap counts *open* orders, so filled and cancelled ones must give their slot back."""
+    exchange = Exchange(RiskLimits(max_open_orders_per_account=2))
+    exchange.send(NewOrder("m1", "mm", Side.SELL, 10, 1010))
+    exchange.send(NewOrder("m2", "mm", Side.SELL, 10, 1011))
+    assert exchange.send(NewOrder("m3", "mm", Side.SELL, 10, 1012)) == []
+    assert exchange.engine.order("m3").status is OrderStatus.REJECTED  # the cap bites
+
+    exchange.send(NewOrder("t1", "hedge", Side.BUY, 20, 1011))  # sweeps m1 and m2 completely
+    assert exchange.engine.order("m1").status is OrderStatus.FILLED
+    exchange.send(NewOrder("m4", "mm", Side.SELL, 10, 1012))
+    exchange.send(NewOrder("m5", "mm", Side.SELL, 10, 1013))
+    assert exchange.engine.order("m5").status is OrderStatus.NEW  # both slots came back
+
+
+def test_a_partially_filled_resting_order_still_counts_against_the_open_cap() -> None:
+    exchange = Exchange(RiskLimits(max_open_orders_per_account=1))
+    exchange.send(NewOrder("m1", "mm", Side.SELL, 100, 1010))
+    exchange.send(NewOrder("t1", "hedge", Side.BUY, 40, 1010))  # partial: m1 keeps resting
+    assert exchange.engine.order("m1").status is OrderStatus.PARTIALLY_FILLED
+    exchange.send(NewOrder("m2", "mm", Side.SELL, 10, 1011))
+    assert exchange.engine.order("m2").status is OrderStatus.REJECTED
+    exchange.send(CancelOrder("m1"))
+    exchange.send(NewOrder("m3", "mm", Side.SELL, 10, 1011))
+    assert exchange.engine.order("m3").status is OrderStatus.NEW
 
 
 def test_replaying_the_journal_rebuilds_an_identical_engine() -> None:

@@ -58,7 +58,7 @@ From the [latency and estimation tables](../../cheatsheets/latency-and-estimatio
 | Postings | 10B docs x ~1,000 terms | ~10^13 postings |
 | Index size | 10^13 x ~5 B compressed (delta-encoded doc id plus term frequency) | ~50 TB |
 | Document store | 10B x 2 KB of extracted text, title and metadata | ~20 TB, ~210 TB for both at replication factor 3 |
-| New postings/day | 333M docs x 1,000 terms x 5 B | ~660 GB/day of segment writes |
+| New postings/day | 333M docs x 1,000 terms x 5 B | ~1.7 TB/day of segment writes (50 TB spread over the 30-day refresh) |
 | Shards | 50 TB / ~100 GB per serving node | ~500 shards, x3 replicas = ~1,500 nodes |
 | Query QPS | 5B/day / 10^5 | ~50k/s average, ~150k/s peak |
 | Shard requests | 150k/s x 500 shards | **75M/s — the number that forces tiering and caching** |
@@ -359,7 +359,7 @@ recent('index') newest first: [999, 106, 105]
 tombstoned doc 105 of 9; merge keeps 8 in 1 segment
 ```
 
-The sizing is friendly: 150M tweets/day at ~20 indexed terms each is ~3B postings/day, roughly 6 GB/day compressed, so seven days fits in RAM across a handful of machines. The two operational levers are the **refresh interval** — how long a document waits in the buffer before becoming visible, the "near" in near-real-time — and the **merge policy**, since every unmerged segment is another postings list per query.
+The sizing is friendly: 150M tweets/day at ~20 indexed terms each is ~3B postings/day, ~15 GB/day at the same 5 B per posting, so seven days is ~100 GB and fits in RAM across a handful of machines. The two operational levers are the **refresh interval** — how long a document waits in the buffer before becoming visible, the "near" in near-real-time — and the **merge policy**, since every unmerged segment is another postings list per query.
 
 ## Scaling, bottlenecks and failure modes
 
@@ -382,7 +382,7 @@ flowchart LR
     end
     subgraph build["Index build"]
         b_crawl["Crawler fleet, ~4k pages/s"]
-        b_mr[["MapReduce: 660 GB/day of postings"]]
+        b_mr[["MapReduce: 1.7 TB/day of postings"]]
         b_rt["Real-time indexer"]
     end
     subgraph data["Data"]

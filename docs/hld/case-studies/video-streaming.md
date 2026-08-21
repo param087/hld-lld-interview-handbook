@@ -17,8 +17,8 @@ description: Video on demand at scale — resumable presigned uploads, a paralle
 | Question | Assumption taken |
 |---|---|
 | Uploads or a curated catalogue? | User uploads (YouTube); the Netflix variant is called out where it differs. |
-| Scale: viewers, creators, watch time? | 100M DAU, 5M creators of whom 10% upload one video a day, 5 views per viewer per day of ~5 watched minutes each (25 minutes/day). |
-| Average video length and source quality? | New uploads average 4 minutes, 1080p at ~10 Mbps, so ~300 MB per upload; the watched catalogue skews longer than the daily upload mix. |
+| Scale: viewers, creators, watch time? | 100M DAU, 5M creators of whom 10% upload one video a day, 5 views/viewer/day of ~5 watched minutes each. |
+| Average video length and source quality? | Uploads average 4 minutes, 1080p at ~10 Mbps (~300 MB); the watched catalogue skews longer. |
 | Live streaming? | No. Live is a different latency tier. |
 | How fast must a video be watchable after upload? | 90% playable within 10 minutes; large 4K files may take an hour. |
 | Which devices and networks? | Everything from a 500 kbps phone to a 4K TV, so adaptive bitrate is mandatory. |
@@ -55,7 +55,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 |---|---|---|
 | Uploads/day | 5M creators x 10% x 1 video | 500k/day = ~5/s, ~15/s peak |
 | Raw ingest | 500k x 300 MB | 150 TB/day of mezzanine files |
-| Ladder output | 5 rungs sum to ~10 Mbps (400k + 800k + 1.4M + 2.5M + 5M) = ~300 MB, plus the mezzanine you archive | ~600 MB/video: 300 TB/day, ~110 PB/year |
+| Ladder output | 5 rungs summing to ~10 Mbps x 4 min = ~300 MB, plus the archived mezzanine | ~600 MB/video: 300 TB/day, ~110 PB/year |
 | Encode tasks | 500k x 4 min x 60 / 4 s segments x 5 rungs | 150M/day = ~1.7k/s |
 | Encoder fleet | 1.7k tasks/s x 4 core-seconds | ~7k cores steady, 3x for bursts |
 | View QPS (API) | 500M views / 10^5 | ~5k/s, ~15k/s peak |
@@ -63,7 +63,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Origin QPS | 375k/s x 5% edge miss | ~19k/s, ~56k/s peak |
 | Concurrent streams | 500M x 5 min x 60 s / 10^5 | ~1.5M, ~4.5M peak |
 | Egress bandwidth | 1.5M streams x 3 Mbps average rung | ~4.5 Tbps, ~13.5 Tbps peak |
-| Edge cache per site | ~180k hot titles x ~300 MB of ladder — every site holds the whole head, not a shard of it | ~55 TB: 3-6 boxes at 20 TB disk |
+| Edge cache per site | ~180k hot titles x ~300 MB of ladder, held whole at every site | ~55 TB: 3-6 boxes at 20 TB disk |
 
 Two things to say out loud. **Egress is the cost model**: 4.5 Tbps cannot come from an origin, so 95%+ must be served by edges and the design question becomes what those edges hold. **Transcoding is 300x the upload rate in tasks** (5 uploads/s become 1.7k encode tasks/s), which is why it is a queue-fed DAG and never a synchronous call.
 
@@ -365,7 +365,7 @@ The probing question is "you have 4.5 Tbps of egress and a 550 PB catalogue — 
 | Torso: steady catalogue | Moderate | Pull-through, long TTL, origin shield | Occasional |
 | Tail: old or niche uploads | Small share, huge footprint | Pull-through, short TTL, evict fast | Every cold play |
 
-Netflix's Open Connect is the extreme head strategy: appliances sit inside ISP networks and the popular catalogue is **pushed to them overnight**, when the network is idle, from per-region popularity prediction. The bytes are inside the ISP before anyone presses play, so peak-hour traffic never crosses a transit link. YouTube cannot do that for everything — 500k unpredictable uploads a day — so it pre-warms what trending signals suggest and pulls the rest.
+Netflix's Open Connect is the extreme head strategy: appliances inside ISP networks, loaded **overnight** from per-region popularity prediction. The bytes are inside the ISP before anyone presses play, so peak-hour traffic never crosses a transit link. YouTube cannot do that for 500k unpredictable uploads a day, so it pre-warms what trending signals suggest and pulls the rest.
 
 The mechanisms to name:
 

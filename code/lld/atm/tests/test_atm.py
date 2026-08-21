@@ -157,6 +157,17 @@ def test_daily_limit_is_shared_by_every_machine(clock: FakeClock) -> None:
     assert third.withdraw(Money.of("300.00")).record.amount == Money.of("300.00")
 
 
+def test_an_in_flight_reservation_counts_against_the_daily_limit(clock: FakeClock) -> None:
+    # Two machines mid-withdrawal: each amount is under the limit, together they clear it.
+    # Checking only ``daily_withdrawn`` would let both reserve and both commit.
+    bank, _ = build(clock, balance="5000.00", daily_limit=Money.of("500.00"))
+    held = bank.reserve("ACC-1", Money.of("300.00"))
+    with pytest.raises(DailyLimitExceededError, match="200.00"):
+        bank.reserve("ACC-1", Money.of("300.00"))
+    bank.release(held)  # the first machine jammed; the allowance comes back
+    assert bank.reserve("ACC-1", Money.of("300.00")).amount == Money.of("300.00")
+
+
 def test_out_of_cash_is_detected_before_anything_is_reserved(clock: FakeClock) -> None:
     bank, card = build(clock)
     atm = ATM("atm-1", bank, CashDispenser({TWENTY: 2}), clock=clock)

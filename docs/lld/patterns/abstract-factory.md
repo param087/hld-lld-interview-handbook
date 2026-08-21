@@ -166,9 +166,12 @@ pipeline = IngestPipeline(provider)  # the module has create_storage and create_
 
 ## Where it appears in LLD problems
 
-- [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — a provider family: the `PaymentProcessor` adapter, the webhook parser and the refund client must agree on ids and signatures; pairing one provider's processor with another's parser is this page's mismatch.
-- [Design Uber (LLD) with driver matching](../problems/ride-sharing-lld.md) — a ride-type family: for "XL" the vehicle requirements, the fare calculator and the matching rule come as a set, chosen once per request type.
-- The in-memory fakes in [Unit of Work](unit-of-work.md) are a family too: repositories and the unit of work that commits them must be built together.
+Nowhere, and that is the honest answer worth giving in an interview. Two problems come close and both stop short:
+
+- [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — `PaymentProcessorFactory` looks like the entry point to a family, but it is a single-product registry: one lookup, `for_method(method) -> PaymentProcessor`, keyed by payment method. There is no second product to keep consistent, so [Factory Method](factory-method.md) is the pattern actually in play.
+- [Design Uber (LLD) with driver matching](../problems/ride-sharing-lld.md) — a ride type does select a vehicle requirement, a fare rule and a matching rule, but they are three independent [Strategy](strategy.md) objects chosen per request, not one factory that guarantees they came from the same set.
+
+Reach for Abstract Factory when a *second* product joins the first and mixing families is a real bug — a vendor's processor paired with a different vendor's webhook parser. Until then it is a factory with extra ceremony.
 
 ## Interview tips
 

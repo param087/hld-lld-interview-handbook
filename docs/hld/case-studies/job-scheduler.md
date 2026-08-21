@@ -39,7 +39,7 @@ description: Due-time indexes versus time wheels, partitioned schedulers with le
 
 - **No double execution** in the normal case, and a detectable, idempotent duplicate in the abnormal one.
 - **No lost runs**: a materialised run is executed or explicitly dead-lettered.
-- **Scale**: ~100 runs/s average, ~300/s peak, ~2.2k writes/s across runs and heartbeats.
+- **Scale**: ~100 runs/s average, ~300/s peak, ~2k writes/s across runs and heartbeats.
 - **Timeliness**: p99 start within 1 s of the slot. A same-datacenter round trip is ~500 µs, so the poll interval, not the network, sets precision.
 - **Availability**: 99.9% for the control plane (8.76 hours/year); the data plane degrades to "late", not "failed".
 - **Durability**: definitions and run records replicated three ways; no state transition is ever lost.
@@ -278,19 +278,17 @@ The coordination service (Raft-backed, see [Consensus and coordination](../funda
 
 The probing question is "the job succeeded but the worker crashed before reporting. What now?" It runs again — and that is fine, provided handlers are idempotent, which is a contract the scheduler must state and help enforce.
 
-**A run's lifecycle. Only the transitions out of `Running` are interesting.**
+**A run's lifecycle. A slot the misfire policy drops never becomes a run at all, so the only interesting transitions are the ones out of `Running`.**
 
 ```mermaid
 stateDiagram-v2
     [*] --> Pending : slot materialised
-    Pending --> Skipped : misfire policy dropped the slot
     Pending --> Running : worker claimed a lease
     Running --> Succeeded : handler returned under a live lease
     Running --> Pending : failed or lease expired, attempts remain
     Running --> Dead : attempts exhausted
     Succeeded --> [*]
     Dead --> [*]
-    Skipped --> [*]
 ```
 
 The scheduler helps idempotency by giving every execution a **stable identity**: the handler receives `(job_id, scheduled_for, attempt)`, so it can write results keyed by the slot rather than by the attempt. A nightly aggregation that writes `rollup[2026-08-20]` is naturally idempotent; one that appends a row is not, and the fix is to key the write by the slot.

@@ -289,10 +289,12 @@ class MatchingEngine:
         )
         self._orders[order.order_id] = order
         if reason := self._risk_reason(order):
-            order.status, order.reject_reason, order.remaining = OrderStatus.REJECTED, reason, 0
+            # Recorded, never raised: ``remaining`` stays untouched so ``filled_quantity`` is 0.
+            order.status, order.reject_reason = OrderStatus.REJECTED, reason
             return []
         trades = self.book.match(order, self.symbol)
         self.trades.extend(trades)
+        self._release_filled_makers(trades)
         if trades:
             self.last_price = trades[-1].price
         if order.remaining == 0:
@@ -306,6 +308,20 @@ class MatchingEngine:
                 self._open_per_account.get(order.account_id, 0) + 1
             )
         return trades
+
+    def _release_filled_makers(self, trades: list[Trade]) -> None:
+        """A resting order that just filled completely is no longer open.
+
+        ``_open_per_account`` is incremented when an order rests and decremented on cancel, so
+        without this the counter only ever grows and an account with nothing on the book is
+        eventually rejected for having "too many open orders". A maker appears at most once per
+        sweep, because the matcher pops it from its queue the moment ``remaining`` hits zero.
+        """
+        for trade in trades:
+            maker_id = trade.sell_order_id if trade.aggressor is Side.BUY else trade.buy_order_id
+            maker = self._orders[maker_id]
+            if maker.status is OrderStatus.FILLED:
+                self._open_per_account[maker.account_id] -= 1
 
     def _risk_reason(self, order: Order) -> str | None:
         if order.quantity > self.limits.max_order_quantity:

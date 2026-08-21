@@ -131,7 +131,12 @@ class Account:
         return self.balance - self.reserved
 
     def remaining_daily(self) -> Money:
-        return self.daily_limit - self.daily_withdrawn
+        """Reservations count against the limit exactly as they count against the balance.
+
+        Subtracting only ``daily_withdrawn`` would let two machines each reserve an
+        amount under the limit and then both commit, taking the account over it.
+        """
+        return self.daily_limit - self.daily_withdrawn - self.reserved
 
 
 @dataclass(frozen=True, slots=True)

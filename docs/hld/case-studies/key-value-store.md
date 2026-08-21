@@ -61,7 +61,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Hot set (80/20 rule) | 20% of 1B keys x 1 KB | 200 GB, ~7 GB per node of 30: row and page cache, no cache tier |
 | Nodes | 90k replica writes/s at ~5k-10k per node = 9-18; x1.5-2 headroom | ~30 nodes, ~100 GB each (write throughput binds, not disk) |
 
-Say it out loud: the dataset is small but the operation rate is high, so the cluster is sized by **replica operations per second**, not by disk — each client write is N replica writes and each read is R replica reads.
+Say it out loud: the dataset is small but the operation rate is high, so the cluster is sized by **replica operations per second**, not by disk — each write is N replica writes, each read R replica reads.
 
 ## API design
 
@@ -217,7 +217,7 @@ sequenceDiagram
     CO-)RD: read repair: store the winning versions
 ```
 
-Walk-through: the coordinator is whichever replica the client library picked, so there is no leader to elect. A write costs one local WAL append plus one parallel round trip, answered at the W-th acknowledgement; a read costs the same trip plus a clock comparison, not a value merge. Hint handoff, Merkle comparisons and compaction all run off the request path.
+Walk-through: the coordinator is whichever replica the client library picked, so there is no leader to elect. A write costs one local WAL append plus one parallel round trip, answered at the W-th acknowledgement; a read adds a clock comparison, not a value merge. Hint handoff, Merkle comparisons and compaction run off the request path.
 
 ## Deep dive: consistent hashing and preference lists
 
@@ -227,14 +227,14 @@ The probing question is "which nodes hold a key, and what moves when you add a n
 |---|---|---|---|---|
 | `hash(key) mod N` | O(1) | ~N/(N+1), almost everything | Good | Adding a node reshuffles the cluster |
 | Range partitioning | O(log ranges) | Only the split range | Needs rebalancing | Hot ranges; sequential keys land on one node |
-| Consistent-hash ring, one point per node | O(log N) | ~1/N | Poor: some own 2x the average arc | A removed node dumps its arc on one successor |
+| Consistent-hash ring, one point per node | O(log N) | ~1/N | Poor: some own 2x the mean arc | A removed node dumps its arc on one successor |
 | Ring with virtual nodes | O(log V) | ~1/N, spread over all nodes | Good with ~100 points per node | The chosen design |
 
 ![Hash ring](../../assets/img/figures/hash_ring.png){ width="800" }
 
-Every node takes ~100 pseudo-random tokens on a 2^32 ring; a key belongs to the first token clockwise from `hash(key)`. That evens out load and spreads a departing node's arcs over many successors — mechanics and measurements on the [partitioning page](../fundamentals/partitioning-and-consistent-hashing.md).
+Every node takes ~100 pseudo-random tokens on a 2^32 ring and a key belongs to the first token clockwise from `hash(key)`, which evens out load and spreads a departing node's arcs over many successors ([partitioning page](../fundamentals/partitioning-and-consistent-hashing.md)).
 
-Specific to this store is the **preference list**: the walk continued to the first N *distinct physical* nodes. Skipping further tokens of a node already chosen is the detail candidates forget — without it two of three replicas sit on one machine. Production rings skip same-rack nodes too and run to N + 2, so a coordinator always has healthy fallbacks. The ring hash must be stable across processes and languages, since every client computes it; a salted `hash()` is the wrong tool.
+Specific to this store is the **preference list**: the walk continued to the first N *distinct physical* nodes. Skipping further tokens of a node already chosen is the detail candidates forget — without it two of three replicas sit on one machine. Production rings skip same-rack nodes too and run to N + 2 for healthy fallbacks. The hash must be stable across processes and languages, since every client computes the ring; a salted `hash()` is the wrong tool.
 
 ```python
 ring = HashRing(["A", "B", "C", "D", "E"], vnodes=64)
@@ -270,19 +270,19 @@ The probing question is "two clients update the same cart while a node is down; 
 
 | Strategy | Concurrent writes | Clock skew | Metadata per version | Burden |
 |---|---|---|---|---|
-| Last-writer-wins (wall-clock timestamp) | One silently lost | A fast clock wins every conflict for hours | 8 B | Hidden data loss, none on the application |
+| Last-writer-wins (wall-clock timestamp) | One silently lost | A fast clock wins every conflict for hours | 8 B | Hidden data loss |
 | Vector clocks (per-coordinator counters) | Both kept as siblings | Immune | A few (node, counter) pairs | Application must merge siblings |
-| CRDTs (merge is a property of the type) | Merged deterministically | Immune | Type-dependent | Only for data with a natural merge (sets, counters) |
+| CRDTs (merge is part of the type) | Merged deterministically | Immune | Type-dependent | Only for data with a natural merge |
 
 Choose vector clocks where a lost update matters (carts, profiles) and last-writer-wins per keyspace where it does not (metrics, heartbeats). Cassandra chose LWW, Dynamo and Riak chose clocks; name the trade rather than picking a side by reflex.
 
-Every version is stamped `{coordinator: counter, ...}`, incremented on the context the client sent. If clock A has every counter of B at least as high, A *descends from* B and B is dropped; otherwise the writes were concurrent and both survive as siblings. A read returns every sibling plus their merged clock, and the next write carrying that context collapses them — in the demo `{A:1, C:1}` and `{C:1, D:1}` become one version under `{A:1, C:1, D:1}`.
+Every version is stamped `{coordinator: counter, ...}`, incremented on the context the client sent. If clock A has every counter of B at least as high, A *descends from* B and B is dropped; otherwise the writes were concurrent and both survive as siblings. A read returns every sibling plus their merged clock, and the next write carrying that context collapses them: `{A:1, C:1}` and `{C:1, D:1}` fold into one version under `{A:1, C:1, D:1}`.
 
 ```python title="code/hld/kv_cluster.py — clocks, versions and reconciliation"
 --8<-- "code/hld/kv_cluster.py:vector_clock"
 ```
 
-**Read repair** is the cheap half of anti-entropy: when one of the R replicas returns a dominated version or nothing, the coordinator writes the winners back after answering the client, so hot keys converge on their own and only cold keys need the Merkle sweep of deep dive 4. Mention that clocks are truncated — Dynamo keeps the ten newest entries, bounding metadata at the price of false siblings.
+**Read repair** is the cheap half of anti-entropy: when one of the R replicas returns a dominated version or nothing, the coordinator writes the winners back after answering the client, so hot keys converge on their own and only cold keys need deep dive 4's Merkle sweep. Clocks are truncated too — Dynamo keeps the ten newest entries, bounding metadata at the price of false siblings.
 
 ## Deep dive: failure handling with gossip, sloppy quorums, hinted handoff and anti-entropy
 
@@ -292,11 +292,11 @@ The probing question is "a node dies mid-afternoon; walk me through the next hou
 |---|---|---|---|
 | Gossip + failure detector | Who is up, who owns which tokens | Seconds | O(log N) rounds, a few messages per node per second |
 | Sloppy quorum | Keeps writes flowing while a home replica is down | Immediate | The write lands on a stand-in outside the list |
-| Hinted handoff | Returns stand-in writes to the home replica | Minutes, on the node's return | Hint storage on the stand-in, bounded by a TTL |
+| Hinted handoff | Returns stand-in writes to the home replica | Minutes, on its return | Hint storage on the stand-in, bounded by a TTL |
 | Read repair | Stale replicas of hot keys | On the next read | One extra write per stale answer |
-| Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hashes compared in proportion to differences, not data |
+| Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hashes compared in proportion to differences |
 
-**Gossip** spreads membership: a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D — the write still reaches W, so the client is never refused, and that sloppy quorum is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E hands the hinted versions over. If E dies first the hint is lost and **anti-entropy** compares Merkle trees of the range A and D share, descending only where hashes differ: one lost update among 200 keys, found in 13 comparisons.
+**Gossip** spreads membership: a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D — the write still reaches W, so the client is never refused, and that sloppy quorum is why deep dive 2's guarantee weakens under failure. When gossip reports D back, E hands the hinted versions over; if E died first the hint is lost and **anti-entropy** compares Merkle trees of the range A and D share, descending only where hashes differ (13 comparisons to find one lost update among 200 keys).
 
 The cluster class ties it together — `put` records hints, `recover` hands them off, `anti_entropy` repairs what the hints missed:
 
@@ -349,9 +349,9 @@ flowchart LR
     n_bloom -->|"yes"| n_ln
 ```
 
-The write is acknowledged as soon as the WAL append is durable — one sequential write, no seek. The memtable is sorted in memory (a skip list in RocksDB) so a flush streams entries in key order, and flushed SSTables are immutable: no reader locks, and a whole table can be shipped when a node streams a range to a new member. A read checks the memtable, then each SSTable's Bloom filter — at ~10 bits per key it rules out ~99% of the tables that lack the key — and the sparse index turns what remains into one block read (~16 µs of SSD). Compaction merges tables in the background, keeps the newest siblings and drops tombstones past the grace period.
+The write is acknowledged as soon as the WAL append is durable — one sequential write, no seek. The memtable is sorted in memory (a skip list in RocksDB) so a flush streams entries in key order, and flushed SSTables are immutable, so readers need no locks and a whole table can be shipped to a joining node. A read checks the memtable, then each SSTable's Bloom filter — at ~10 bits per key it rules out ~99% of the tables that lack the key — and the sparse index turns what remains into one block read (~16 µs of SSD). Compaction merges tables in the background, keeps the newest siblings and drops tombstones past the grace period.
 
-Whiteboard `WAL -> memtable -> SSTable (Bloom + index) -> compaction` and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill"; the measured numbers are on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
+Whiteboard `WAL -> memtable -> SSTable (Bloom + index) -> compaction` and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill"; measured numbers on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
 
 ## Scaling, bottlenecks and failure modes
 
@@ -393,10 +393,10 @@ flowchart LR
 
 What breaks first, and what you do about it:
 
-- **Hot keys.** A viral key lands on exactly N nodes however large the cluster is: consistent hashing spreads keys, not popularity. Cache those keys, salt write-hot counters (`key#0..key#9`, merged on read), or move their tokens to quieter nodes.
+- **Hot keys.** A viral key lands on exactly N nodes however large the cluster is: consistent hashing spreads keys, not popularity. Cache them, salt write-hot counters (`key#0..key#9`, merged on read), or move their tokens to quieter nodes.
 - **Tail latency.** One replica in a long compaction or GC pause slows every quorum it joins; speculative retries after a p99 timeout and throttled compaction cover what waiting for R does not.
-- **Sibling, tombstone and hint growth.** A client writing without a context outruns whoever merges siblings, so cap and alert on them. Deletes are writes, so a range full of them reads slowly until compaction purges tombstones past the grace period, and hints expire on a TTL so a node down for days is repaired by anti-entropy rather than a flood on its return.
-- **Membership churn.** A flapping node triggers hint storms, so gossip marks it suspect and leaves the ring alone until an operator decides; adding a node streams ~1/N of the data, throttled, and it serves reads only once its ranges are complete. A split brain keeps accepting writes on both sides — the AP promise, paid for in siblings.
+- **Sibling, tombstone and hint growth.** A client writing without a context outruns whoever merges siblings, so cap and alert on them. Deletes are writes, so a range full of them reads slowly until compaction purges tombstones; hints expire on a TTL, so a node down for days is repaired by anti-entropy instead of a flood on its return.
+- **Membership churn.** A flapping node triggers hint storms, so gossip marks it suspect and leaves the ring alone until an operator decides; a joining node streams ~1/N of the data, throttled, and serves reads only once its ranges are complete. A split brain accepts writes on both sides — the AP promise, paid for in siblings.
 - **Cross-region.** Replicate asynchronously with N=3 per region and local quorums (`LOCAL_QUORUM`): a ~70-150 ms cross-region hop inside every write would blow the 20 ms budget. Inter-region conflicts are ordinary siblings.
 
 ## Trade-offs summary
@@ -415,42 +415,42 @@ What breaks first, and what you do about it:
 ## Interviewer follow-ups
 
 ??? question "Why not pick a leader per partition and avoid conflicts entirely?"
-    A leader gives a total order per key and no siblings, but every leader failure costs an election window during which that partition refuses writes. Dynamo needed cart writes never to fail, so it took conflicts as the price.
+    A leader gives a total order per key and no siblings, but every leader failure costs an election window during which the partition refuses writes. Dynamo needed cart writes never to fail.
 
 ??? question "What exactly goes wrong with last-writer-wins?"
-    Two concurrent writes leave one survivor chosen by timestamp; the other update vanishes silently. Clocks drift too, so a fast node wins every conflict until someone notices. Fine for sensor readings, dangerous for carts and counters.
+    Two concurrent writes leave one survivor chosen by timestamp; the other vanishes silently. Clocks drift too, so a fast node wins every conflict until someone notices. Dangerous for carts and counters.
 
 ??? question "How do you keep vector clocks from growing without bound?"
-    Entries are per coordinator, so a clock holds at most one per node that ever coordinated the key; Dynamo truncates to the ten newest. Truncation can fake a sibling, which the next reconciling write removes.
+    Entries are per coordinator, so a clock holds one per node that ever coordinated the key; Dynamo truncates to the ten newest. Truncation can fake a sibling, which the next reconciling write removes.
 
 ??? question "Is W + R > N strong consistency?"
-    No. A reader sees the latest *acknowledged* write only when both quorums come from the home replicas. Concurrent writes are still unordered, and a sloppy quorum can acknowledge on a stand-in no read quorum contacts.
+    No. A reader sees the latest *acknowledged* write only when both quorums come from the home replicas. Concurrent writes stay unordered, and a sloppy quorum can acknowledge on a stand-in no read quorum contacts.
 
 ??? question "How does a new node join without downtime?"
-    The operator adds it with a set of tokens, gossip spreads the new ring, and the node streams each range from the current replicas while they keep serving; it answers reads once the stream completes.
+    The operator adds it with a set of tokens, gossip spreads the new ring, and the node streams each range from the current replicas while they keep serving; it answers reads once streaming completes.
 
 ??? question "How would you add range queries or secondary indexes?"
-    Range queries need order-preserving partitioning, trading even spread for hot ranges; Cassandra hashes the partition key and sorts on a clustering key *within* the partition. Secondary indexes go local (fan-out queries) or global (an asynchronous index table).
+    Range queries need order-preserving partitioning, trading even spread for hot ranges; Cassandra hashes the partition key and sorts on a clustering key *within* the partition. Secondary indexes go local or global.
 
 ??? question "Where do the Bloom filters live and what do they cost?"
     One per SSTable, in memory. At ~10 bits per key, the ~100M key copies each of the 30 nodes stores cost ~125 MB — trivial next to the row cache. A point read then skips almost every table.
 
 !!! tip "Interview tip"
-    Say "preference list" in your first sentence about replication and draw the ring with the N distinct nodes marked. It shows the replicas are not "the next N tokens", and it sets up every later answer: sloppy quorums write past the list, hints name a node in it, anti-entropy compares nodes sharing one.
+    Say "preference list" in your first sentence about replication and draw the ring with the N distinct nodes marked. It shows the replicas are not "the next N tokens", and it sets up sloppy quorums, hints and anti-entropy alike.
 
 !!! warning "Common mistake"
-    Claiming that W + R > N makes the store strongly consistent. It makes a read see the latest acknowledged write under normal operation, nothing more: concurrent writes still produce siblings and sloppy quorums break the overlap. Interviewers hearing "strongly consistent" ask about two concurrent writers next.
+    Claiming that W + R > N makes the store strongly consistent. It only makes a read see the latest acknowledged write under normal operation: concurrent writes still produce siblings, and sloppy quorums break the overlap.
 
 ## 45-minute pacing
 
 | Minutes | What to say and draw |
 |---|---|
 | 0–5 | Clarify: AP over CP, opaque ~1 KB values, 1B keys, 10:1 reads, single region, application merges conflicts. |
-| 5–9 | Estimation: 100k reads/s, 10k writes/s, 3 TB raw, 90k replica writes/s at peak, ~30 nodes — "sized by replica ops, not disk". |
+| 5–9 | Estimation: 100k reads/s, 10k writes/s, 3 TB raw, 90k replica writes/s peak, ~30 nodes — "sized by replica ops, not disk". |
 | 9–14 | API (get returns siblings + context, put takes context, delete is a tombstone) and the per-node data model. |
 | 14–24 | v1 diagram; narrate the write path (clock, WAL, W acks) and the read path (R answers, reconcile, repair). |
-| 24–40 | Deep dives: ring and preference lists, N/W/R overlap, clocks vs LWW, the failure hour; LSM path if asked why a node is fast. |
-| 40–45 | Bottlenecks (hot keys, tail latency, sibling and tombstone growth), multi-region local quorums, trade-offs table. |
+| 24–40 | Deep dives: ring and preference lists, N/W/R overlap, clocks vs LWW, the failure hour; LSM path if asked. |
+| 40–45 | Bottlenecks (hot keys, tail latency, sibling and tombstone growth), multi-region quorums, trade-offs. |
 
 ## Related
 
@@ -458,6 +458,6 @@ What breaks first, and what you do about it:
 - [Replication](../fundamentals/replication.md) — quorum arithmetic, the stale-read demo, Merkle trees
 - [Time, clocks and ordering](../fundamentals/time-and-ordering.md) — why wall clocks cannot order concurrent writes
 - [Storage engines and indexing](../fundamentals/storage-engines-and-indexing.md) — the LSM tree inside each node
-- [CAP, PACELC and consistency models](../fundamentals/cap-pacelc-and-consistency-models.md) — where "always writable" sits on the map
-- [Classic papers digest](../fundamentals/classic-papers-digest.md) — Dynamo and Cassandra in one page each
-- Primary sources: DeCandia et al., "Dynamo: Amazon's Highly Available Key-value Store" (SOSP 2007); Preguiça et al., "Dotted Version Vectors" (2010)
+- [CAP, PACELC and consistency models](../fundamentals/cap-pacelc-and-consistency-models.md) — where "always writable" sits
+- [Classic papers digest](../fundamentals/classic-papers-digest.md) — Dynamo and Cassandra in a page each
+- Primary source: DeCandia et al., "Dynamo: Amazon's Highly Available Key-value Store" (SOSP 2007)

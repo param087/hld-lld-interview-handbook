@@ -173,7 +173,7 @@ The structural patterns all "wrap something", so classify by two questions: does
 ## Where it appears in LLD problems
 
 - [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — `PaymentProcessor` over several providers; the adapters absorb provider-specific ids, units and failure codes.
-- [Design a notification service (LLD)](../problems/notification-service.md) — one `Channel` interface over SMS, email and push vendors whose SDKs never agree on addresses or receipts.
+- [Design a notification service (LLD)](../problems/notification-service.md) — the `ChannelSender` Protocol is exactly the seam an adapter goes in: the package ships stubs behind it, and a real SMS or push vendor whose SDK disagrees about addresses and receipts is wrapped there without the dispatcher noticing.
 - [Design a food delivery system (Swiggy, Zomato, DoorDash)](../problems/food-delivery.md) — distance and ETA behind one interface, so a straight-line estimate and a maps provider are interchangeable; payments behind the same processor interface as above.
 
 ## Interview tips

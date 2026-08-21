@@ -382,10 +382,12 @@ airline variant: AI2841 BLR->DEL is show LEG-1 with 4 seats
 
 ## Concurrency and edge cases
 
-**Which lock protects what.** There are exactly two families, and naming them is the answer the interviewer wants.
+**Which lock protects what.** Two families carry the contended path, and naming them is the answer the interviewer wants.
 
 1. `SeatLockService._locks` — **one `threading.Lock` per `ShowSeat`**, keyed `"{show_id}::{seat_number}"` and created lazily under `_registry_lock`. It guards seat status, the hold owner and the expiry. Two users tapping A5 at the same instant serialise on A5's lock only; a user booking B7 is untouched. This is the in-process twin of a row lock.
 2. `BookingService._bookings_lock` — guards the booking registry, every `Booking` transition and the idempotency-key table. It is never held while a seat lock is held, so the two families cannot form a cycle.
+
+A third, uninteresting family exists and you should name it only if asked: `Catalog._meta_lock` and `InMemoryShowRepository._lock` guard read-mostly catalog dicts. Only one cross-family nesting exists in the whole package — `cancel` looks the show up while holding `_bookings_lock`, so the order is bookings then catalog, never the reverse — and a seat lock is never held while either of the other two is. `SeatLockService._registry_lock` sits inside a seat lock during a multi-seat acquire, but it is always a leaf that is released before anything else is taken, so it cannot close a cycle either.
 
 **Lock ordering.** A multi-seat request sorts its keys before acquiring. Two users asking for `A5,A6` and `A6,A5` therefore both take `A5` first and one waits — the classic ABBA deadlock cannot arise. The cost is negligible: an uncontended mutex is about 17 ns, so six locks cost roughly 100 ns, against the ~500 µs round trip to the payment gateway that this design carefully keeps *outside* every lock.
 

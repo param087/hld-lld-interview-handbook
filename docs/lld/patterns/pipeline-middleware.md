@@ -222,7 +222,7 @@ Draw the class diagram, then say "in Python a middleware is a decorator; I would
 - [Design a rate limiter (LLD)](../problems/rate-limiter-lld.md) — the limiter as a stage that answers 429 with `Retry-After`, placed before authentication.
 - [Design a notification service (LLD)](../problems/notification-service.md) — render, apply preferences and quiet hours, deduplicate, rate limit per user, send: each stage may drop the notification.
 - [Design a logging framework](../problems/logging-framework.md) — a record passes filters, then a formatter, then handlers.
-- [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — idempotency check, fraud rules and authorisation as stages in front of capture.
+- [Design a payment gateway and digital wallet](../problems/payment-gateway-wallet.md) — the fraud rules are the chained part (`AmountCeilingRule`, `DenylistRule`, `VelocityRule`, `DailyLimitRule`, linked by `set_next`); the idempotency claim and the authorisation call around them are plain statements. Only the *extensible* step earns the chain.
 
 ## Interview tips
 

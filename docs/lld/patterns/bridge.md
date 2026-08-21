@@ -163,7 +163,7 @@ Say it in the room: "I would start with the dataclass and the callable, and prom
 
 ## Where it appears in LLD problems
 
-- [Design a notification service (LLD)](../problems/notification-service.md) — notification kinds (transactional, marketing, digest) over channels (e-mail, SMS, push); the adapter page covers the vendor side of each channel.
+- [Design a notification service (LLD)](../problems/notification-service.md) — the two axes are there (what happened x how it is delivered) but the code resolves them with a `(event, channel)` template lookup rather than two hierarchies. That is the pragmatic answer when one axis is data; Bridge earns its place once a kind needs *behaviour* of its own.
 - [Design a logging framework](../problems/logging-framework.md) — loggers and handlers on one side, formatters and sinks on the other; adding JSON output must not touch the file handler.
 
 ## Interview tips
@@ -180,7 +180,7 @@ Say it in the room: "I would start with the dataclass and the callable, and prom
 - [Strategy](strategy.md) — one axis of variation instead of two
 - [Abstract Factory](abstract-factory.md) — choosing the concrete implementor per platform
 - [Dependency Injection](dependency-injection.md) — how the implementor reaches the abstraction
-- [Design a notification service (LLD)](../problems/notification-service.md) — kinds x channels in a full problem
+- [Design a notification service (LLD)](../problems/notification-service.md) — the two axes resolved by lookup instead
 - [Design a logging framework](../problems/logging-framework.md) — handlers x formatters in a full problem
 - Gamma, Helm, Johnson and Vlissides, *Design Patterns* (1994), Bridge
 - [Python documentation: `logging` — Handler and Formatter objects](https://docs.python.org/3/library/logging.html#handler-objects)

@@ -237,6 +237,47 @@ def test_a_declined_processor_releases_the_reservation(clock: FakeClock) -> None
     assert rig.store.ledger.balance(PSP_CLEARING) == Money.of("-70.00")  # 100 out, 30 back in
 
 
+def test_a_rail_that_raises_still_hands_the_reservation_back(clock: FakeClock) -> None:
+    """A decline is the easy case; an exception from the rail is the one that strands money."""
+
+    class ExplodingProcessor:
+        def authorize(self, method: PaymentMethod, amount: Money, reference: str) -> object:
+            raise RuntimeError("connection reset by the acquirer")
+
+        def capture(self, authorization_id: str, amount: Money) -> object:
+            raise RuntimeError("unreachable")
+
+        def refund(self, capture_id: str, amount: Money) -> object:
+            raise RuntimeError("unreachable")
+
+    rig = Rig(clock)
+    rig.wallets._processors = PaymentProcessorFactory({PaymentMethodType.CARD: ExplodingProcessor()})
+    ada = rig.wallets.open_wallet("ada", Money.of("100.00"))
+
+    with pytest.raises(RuntimeError, match="connection reset"):
+        rig.wallets.withdraw("k1", ada.id, CARD, Money.of("30.00"))
+
+    wallet = rig.store.wallet(ada.id)
+    assert wallet.reserved == Money(0) and wallet.available() == Money.of("100.00")
+    assert rig.store.ledger.is_balanced()
+
+
+def test_a_fee_survives_being_refunded_in_awkward_slices(clock: FakeClock) -> None:
+    """51 cents at 2% is a 1-cent fee that floor division cannot split across two refunds."""
+    rig = Rig(clock)
+    ada = rig.wallets.open_wallet("ada", Money.of("10.00"))
+    payment = rig.payments.pay_merchant("k1", ada.id, "cafe", Money(51))
+    assert rig.store.ledger.balance(FEES) == Money(1)
+
+    rig.payments.refund("r1", payment.id, Money(25))
+    rig.payments.refund("r2", payment.id, Money(26))
+
+    assert rig.store.transaction(payment.id).status is TransactionStatus.REFUNDED
+    assert rig.store.ledger.balance(FEES) == Money(0)  # the platform kept nothing
+    assert rig.store.ledger.balance("merchant:cafe") == Money(0)  # and owes nothing
+    assert rig.wallets.balance(ada.id) == Money.of("10.00") and rig.store.ledger.is_balanced()
+
+
 def test_the_ledger_refuses_an_imbalanced_posting() -> None:
     ledger = Ledger()
     lopsided = [

@@ -64,7 +64,7 @@ From the [latency and estimation tables](../../cheatsheets/latency-and-estimatio
 | Result cache | 13M queries/day x 20% x 16 KB | ~42 GB, two 64 GB nodes |
 | TSDB shards | 1M/s / ~100k appends/s per node (memory write plus sequential WAL: Redis-like, not Cassandra's 5-10k/s) | 10 shards, 20 with headroom, x2 replicas |
 
-Two sentences for the room. **Compression is the storage story**: 1.4 TB/day becomes 120 GB/day before any downsampling. **Series count, not sample rate, is the limit**: 16 MB/s is trivial, but 10M head chunks at ~2 KB each fill a machine.
+Two sentences for the room. **Compression is the storage story**: 1.4 TB/day becomes 120 GB/day before any downsampling. **Series count, not sample rate, is the limit**: 16 MB/s is trivial, but 10M head chunks at ~2 KB each is 20 GB of RAM.
 
 ## API design
 
@@ -277,7 +277,7 @@ Take the middle option and add a budget. A series is `(name, sorted label set)` 
 --8<-- "code/hld/tsdb_downsample.py:index"
 ```
 
-The arithmetic that makes this a crux: 10M series at ~2 KB of head block each is 20 GB, one machine. Add `user_id` with a million values to one metric and that metric alone becomes a million series per label combination it already had. The bill is not disk — compressed samples stay cheap — it is one open chunk per series in memory, one postings entry per label pair, and a query that merges a million postings lists before reading a sample.
+The arithmetic that makes this a crux: 10M series at ~2 KB of head block each is 20 GB of RAM held open across the shards. Add `user_id` with a million values to one metric and that metric alone becomes a million series per label combination it already had. The bill is not disk — compressed samples stay cheap — it is one open chunk per series in memory, one postings entry per label pair, and a query that merges a million postings lists before reading a sample.
 
 Four defences:
 

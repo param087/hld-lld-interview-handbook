@@ -200,8 +200,9 @@ Draw the class diagram, then say "in Python I would start from a dict of callabl
 
 - [Design an in-memory pub/sub message queue](../problems/pub-sub-system.md) — the bus grown up: durable topics, consumer offsets, consumer groups and at-least-once delivery.
 - [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — `order.placed` fans out to inventory, payment and notification; the order saga is the mediator that consumes those events.
-- [Design an online auction](../problems/online-auction.md) — `bid.placed` triggers outbid notifications and the auction timer without the bidding service knowing either.
-- [Design a stock brokerage system](../problems/stock-brokerage.md) — price ticks and order fills as topics; watchlists, alerts and the portfolio subscribe.
+- [Design a food delivery system (Swiggy, Zomato, DoorDash)](../problems/food-delivery.md) — order events fan out to the restaurant, the courier and the customer without the order service naming any of them.
+- [Design LinkedIn (social network)](../problems/linkedin.md) — connection and post events drive feeds and notifications.
+- Two near misses worth knowing: [Design an online auction](../problems/online-auction.md) and [Design a stock brokerage system](../problems/stock-brokerage.md) both look like buses and are plain [Observer](observer.md) — the auction keeps an `AuctionListener` list and the feed keys subscribers by ticker symbol, not by topic. No topic string, no bus.
 
 ## Interview tips
 
@@ -218,7 +219,7 @@ Draw the class diagram, then say "in Python I would start from a dict of callabl
 - [Pipeline and Middleware](pipeline-middleware.md) — serial stages with a result, the opposite shape
 - [Design an in-memory pub/sub message queue](../problems/pub-sub-system.md) — durable topics and offsets
 - [Design Amazon (cart, order, inventory, payment)](../problems/ecommerce-order-inventory.md) — order events fanned out
-- [Design an online auction](../problems/online-auction.md) — bids as events
+- [Design a food delivery system (Swiggy, Zomato, DoorDash)](../problems/food-delivery.md) — order events as topics
 - [Django documentation: Signals](https://docs.djangoproject.com/en/stable/topics/signals/)
 - [blinker documentation](https://blinker.readthedocs.io/en/stable/)
 - [Martin Fowler, *What do you mean by "Event-Driven"?* (2017)](https://martinfowler.com/articles/201701-event-driven.html)

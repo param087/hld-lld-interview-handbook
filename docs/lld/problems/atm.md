@@ -372,7 +372,7 @@ There is also one ordering rule to state out loud: an account lock may be taken 
 
 ## Tests
 
-`tests/test_atm.py` has 11 cases (16 with parametrisation), one per risk: a withdrawal dispenses the right notes and debits exactly once; three wrong PINs block and retain the card; every operation is refused in the states that do not offer it; the note chain is checked against five amounts including the one greedy gets wrong; the daily limit is shared across machines and resets on a new day; out-of-cash is detected before anything is reserved; an idle session times out and returns the card; a transfer records both sides.
+`tests/test_atm.py` has 11 cases (17 with parametrisation), one per risk: a withdrawal dispenses the right notes and debits exactly once; three wrong PINs block and retain the card; every operation is refused in the states that do not offer it; the note chain is checked against five amounts including the one greedy gets wrong; the daily limit is shared across machines, counts money that is only reserved, and resets on a new day; out-of-cash is detected before anything is reserved; an idle session times out and returns the card; a transfer records both sides.
 
 The jam test is the one to walk through — it asserts all four invariants at once:
 

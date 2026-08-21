@@ -134,6 +134,7 @@ classDiagram
         TRANSFER
         WITHDRAWAL
         MERCHANT_PAYMENT
+        REFUND
     }
     class EntryDirection {
         <<enumeration>>
@@ -439,12 +440,12 @@ The last two lines are the ones to point at. The whole book nets to zero, and th
 
 **Webhook arriving before the commit.** The processor can call back faster than we can finish our own transaction. `handle` finds no transaction for that reference, parks the event, and returns `deferred`; `WalletService` calls `replay` right after committing the authorization. Nothing is lost, nothing is applied twice.
 
-**Rounding.** The fee is `amount x 200 / 10000` with floor division on integer cents, so a 60.00 payment yields exactly 1.20 in fees and 58.80 to the merchant, and a refund reverses the fee on the refunded amount using the same formula. No cent appears or disappears, which the `is_balanced()` assertion proves after every test.
+**Rounding.** The fee is `amount x 200 / 10000` with floor division on integer cents, so a 60.00 payment yields exactly 1.20 in fees and 58.80 to the merchant. A refund reverses the *incremental* fee — `fee_for(refunded_so_far + this_slice) - fee_for(refunded_so_far)` — not the fee on the slice alone. The difference only shows up on awkward amounts, and it is the kind of thing an interviewer probes: 0.51 at 2% is a 1-cent fee, and floor division on two 25-and-26-cent refunds would reverse 0 both times and strand that cent in the fee account forever. Note that `is_balanced()` would not have caught it — the book still nets to zero when a cent sits in the wrong account, so you need the stronger assertion that a fully refunded payment leaves the merchant *and* the fee account at zero.
 
 !!! warning "Common mistake"
     Treating the idempotency key as a cache of the *response*. It is a claim on the *operation*: you take it before you call the processor, you keep it if the payment fails for business reasons, and you release it only when nothing happened. Candidates who look the key up after the charge have built a system that double-charges on exactly the retry the key was supposed to protect.
 
-**Other edge cases handled**: the same key with a different payload (conflict); a key whose first request is still running (conflict); a wallet debited below zero (refused before any entry is written); a refund larger than the refundable remainder; a second refund that completes the total and flips the status to `REFUNDED`; a fraud block recorded as a `FAILED` transaction so the replay re-raises the same error; a declined withdrawal releasing its reservation; an imbalanced posting rejected with the exact residual in the message.
+**Other edge cases handled**: the same key with a different payload (conflict); a key whose first request is still running (conflict); a wallet debited below zero (refused before any entry is written); a refund larger than the refundable remainder; a second refund that completes the total and flips the status to `REFUNDED`; a fraud block recorded as a `FAILED` transaction so the replay re-raises the same error; a declined withdrawal releasing its reservation, and a withdrawal whose rail *raises* rather than declining releasing it too, because a hold with no settlement behind it is money the user cannot spend; an imbalanced posting rejected with the exact residual in the message.
 
 ## Extensibility and follow-ups
 
@@ -460,7 +461,7 @@ The last two lines are the ones to point at. The whole book nets to zero, and th
 
 ## Tests
 
-`tests/test_payment_gateway_wallet.py` has 19 cases, and every one that moves money ends by asserting `ledger.is_balanced()`. The three to walk through are idempotent replay, the two-directional concurrency test, and the webhook triple:
+`tests/test_payment_gateway_wallet.py` has 21 cases, and every one that moves money ends by asserting `ledger.is_balanced()`. The three to walk through are idempotent replay, the two-directional concurrency test, and the webhook triple:
 
 ```python title="code/lld/payment_gateway_wallet/tests/test_payment_gateway_wallet.py — idempotency"
 --8<-- "code/lld/payment_gateway_wallet/tests/test_payment_gateway_wallet.py:idempotency"
@@ -474,7 +475,7 @@ The last two lines are the ones to point at. The whole book nets to zero, and th
 --8<-- "code/lld/payment_gateway_wallet/tests/test_payment_gateway_wallet.py:webhooks"
 ```
 
-The rest cover: a transfer keeping the wallet balance and its ledger account in agreement; a wallet refusing to go negative and releasing the key so a retry works; each of the four fraud rules blocking with its own reason via `parametrize`; a fraud block recorded as a failed transaction that replays as the same error; partial then full refund walking the state machine and returning the fee; a declined processor releasing the reservation; the ledger rejecting a posting that is out by one cent; and all three adapters normalising their vendor responses. Run them with `uv run pytest code/lld/payment_gateway_wallet -q`.
+The rest cover: a transfer keeping the wallet balance and its ledger account in agreement; a wallet refusing to go negative and releasing the key so a retry works; each of the four fraud rules blocking with its own reason via `parametrize`; a fraud block recorded as a failed transaction that replays as the same error; partial then full refund walking the state machine and returning the fee; a fee of one cent surviving a refund split into two slices that each round to zero; a declined processor releasing the reservation and a rail that raises doing the same; the ledger rejecting a posting that is out by one cent; and all three adapters normalising their vendor responses. Run them with `uv run pytest code/lld/payment_gateway_wallet -q`.
 
 ## 45-minute pacing
 

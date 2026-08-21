@@ -64,7 +64,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Hot cache | ~175k active documents x (50 KB snapshot + tail) | ~10 GB in the editor tier |
 | Editor servers | 350k / 100k sockets = 4, sized for blast radius | ~50, each owning a slice of documents |
 
-Two things to say out loud. The op log grows **a thousand times faster than the documents themselves**, so snapshots and compaction are the storage design, not an optimisation. And the per-document rate is tiny — 50 editors at 5 ops/s is 250 ops/s — which is why a *single sequencer per document* is affordable and a global one would not be.
+Two things to say out loud. The op log adds ~3 TB a day against a document corpus of ~5 TB in total, so **two days of keystrokes outweigh every document ever written** and a year of log is ~200x the text it produced — snapshots and compaction are the storage design, not an optimisation. And the per-document rate is tiny — 50 editors at 5 ops/s is 250 ops/s — which is why a *single sequencer per document* is affordable and a global one would not be.
 
 ## API design
 

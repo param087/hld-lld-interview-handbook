@@ -59,7 +59,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Transcode load | 100k streams x 5 renditions | 500k real-time encodes if you transcode everything; ~5k for only the ~1% with an audience |
 | Comment write QPS | 10M viewers x 5% who chat x one message per 60 s | ~8.3k/s average, ~25k/s peak |
 | Naive comment fan-out | one big stream: 200 comments/s x 500k viewers | ~100M socket writes/s — the number that forces batching |
-| Batched fan-out, same stream | 1 flush/s x 500k viewers, ~2 KB per frame | 500k writes/s, ~1 Gbps across ~5 edge servers |
+| Batched fan-out, same stream | 1 flush/s x 500k viewers, ~2 KB per frame | 500k writes/s, ~1 GB/s = 8 Gbps across ~5 edge servers |
 | Chat sockets | 10M x 50% with chat open / 100k per server, x1.5 | ~75 chat edge servers |
 | DVR storage | 100k streams x 2 h x 4.5 GB/h (75 MB/min) | ~900 TB rolling; keeping everything would be ~11 PB/day |
 | Comment storage per year | 8.3k/s x 86,400 x 100 B x 365 | ~72 GB/day, ~26 TB/year — trivial |
