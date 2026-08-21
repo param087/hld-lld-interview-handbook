@@ -162,11 +162,13 @@ nav:
           - Design YouTube or Netflix: hld/case-studies/video-streaming.md
           - Design Uber (with a DoorDash variant): hld/case-studies/ride-sharing.md
           - Design Ticketmaster (with a hotel-booking variant): hld/case-studies/ticketing-and-reservations.md
+          - Design a web crawler: hld/case-studies/web-crawler.md
           - Design typeahead autocomplete: hld/case-studies/typeahead.md
           - Design Yelp (proximity service): hld/case-studies/proximity-service.md
           - Design Nearby Friends: hld/case-studies/nearby-friends.md
           - Design a payment system and digital wallet: hld/case-studies/payment-system.md
           - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
+          - Design a metrics monitoring and alerting system: hld/case-studies/metrics-monitoring.md
           - Design an ad click aggregation system: hld/case-studies/ad-click-aggregation.md
           - Design a Top-K heavy hitters service: hld/case-studies/top-k-heavy-hitters.md
           - Design a distributed cache: hld/case-studies/distributed-cache.md
@@ -226,14 +228,26 @@ nav:
           - lld/problems/index.md
           - Design a parking lot: lld/problems/parking-lot.md
           - Design an elevator system: lld/problems/elevator-system.md
+          - Design a vending machine (and a coffee machine): lld/problems/vending-machine.md
+          - Design a library management system: lld/problems/library-management.md
           - Design an in-memory cache (LRU, LFU, TTL): lld/problems/in-memory-cache.md
           - Design a rate limiter (LLD): lld/problems/rate-limiter-lld.md
           - Design tic-tac-toe (an extensible board game): lld/problems/tic-tac-toe.md
+          - Design chess: lld/problems/chess.md
           - Design snake and ladder: lld/problems/snake-and-ladder.md
+          - Design the snake game: lld/problems/snake-game.md
           - Design Splitwise: lld/problems/splitwise.md
           - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
           - Design a hotel management system: lld/problems/hotel-management.md
+          - Design a stock brokerage system: lld/problems/stock-brokerage.md
+          - Design a car rental system: lld/problems/car-rental.md
           - Design a logging framework: lld/problems/logging-framework.md
+          - Design an in-memory pub/sub message queue: lld/problems/pub-sub-system.md
+          - Design Stack Overflow: lld/problems/stack-overflow.md
+          - Design a traffic signal controller: lld/problems/traffic-signal.md
+          - Design a task scheduler (cron, LLD): lld/problems/task-scheduler.md
+          - Design a restaurant management system: lld/problems/restaurant-management.md
+          - Design an in-memory key-value store with transactions: lld/problems/kv-store-transactions.md
   - Cheatsheets:
       - cheatsheets/index.md
       - Latency numbers and estimation tables: cheatsheets/latency-and-estimation.md
