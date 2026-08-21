@@ -271,8 +271,8 @@ class AnalysisSession:
 
     Without the hook, deep-copying a session would duplicate the engine (and,
     in real code, the connection pool, the lock and the logger behind it).
-    Writing ``memo[id(self)] = ...`` before returning is what keeps ``deepcopy``
-    correct when the graph contains a cycle back to this object.
+    Registering the clone in ``memo`` before copying anything that could point
+    back here is what stops ``deepcopy`` looping on a cycle in the graph.
     """
 
     board: Board

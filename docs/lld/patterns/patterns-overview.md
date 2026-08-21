@@ -1,6 +1,6 @@
 ---
 title: Design patterns overview
-description: The map of the 32 patterns in this handbook — what each is for, the Python idiom that often replaces it, which symptom points to which pattern, the pairs interviewers confuse on purpose, and when the right answer is no pattern at all.
+description: The map of the 31 patterns in this handbook — what each is for, the Python idiom that often replaces it, which symptom points to which pattern, the pairs interviewers confuse on purpose, and when the right answer is no pattern at all.
 ---
 # Design patterns overview
 

@@ -54,7 +54,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 
 | Quantity | Arithmetic | Result |
 |---|---|---|
-| Decision QPS (writes) | 5B / 10^5 x 1.15 | ~58k/s average, ~150k/s peak |
+| Decision QPS (writes) | 5B / 10^5 | ~50k/s average, ~150k/s peak |
 | Quota-status reads | 1% of clients poll `GET /v1/limits` | under 1k/s — negligible |
 | Redis ops, no local tier | 150k/s / ~100k ops/s per instance | 2 shards minimum, 4 with headroom |
 | Redis ops, chunk of 20 | 150k/s / 20 | ~7.5k/s — one shard plus replicas |
@@ -195,17 +195,17 @@ sequenceDiagram
         LB-->>GW: allowed
     else budget exhausted
         GW->>R: EVAL sliding-window script, reserve a chunk
-        alt under the limit
-            R-->>GW: reserved, remaining
-        else over the limit
-            R-->>GW: denied, retry_after
-            GW-->>C: 429 with Retry-After
-        end
+        R-->>GW: reserved with remaining, or denied with retry_after
     end
-    GW->>S: forward the request
-    S-->>GW: 200
-    GW-)K: decision event
-    GW-->>C: 200 with X-RateLimit headers
+    alt under the limit
+        GW->>S: forward the request
+        S-->>GW: 200
+        GW-)K: decision event
+        GW-->>C: 200 with X-RateLimit headers
+    else over the limit
+        GW-)K: decision event
+        GW-->>C: 429 with Retry-After
+    end
 ```
 
 **Read path: the caller's quota view, and the rules poll that keeps every node in step.**
@@ -429,7 +429,7 @@ What breaks first, and what you do:
 | Minutes | What to say and draw |
 |---|---|
 | 0-5 | Clarify: 150k decisions/s peak, per-key and per-endpoint rules, approximate is fine, fail open, three regions. |
-| 5-10 | Estimation: 58k/s average, 150k peak, 500 MB of counters against 40 GB for a log, and the availability multiplication. |
+| 5-10 | Estimation: 50k/s average, 150k peak, 500 MB of counters against 40 GB for a log, and the availability multiplication. |
 | 10-14 | Rules and counters as two very different stores; the 429 contract and `X-RateLimit-*`. |
 | 14-22 | v1 diagram; narrate the decision path (rule lookup, local budget, Redis script) and the rules poll. |
 | 22-34 | Deep dives: algorithm cost per key, the atomic script and the race, then local-then-global. |

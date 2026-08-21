@@ -1,5 +1,7 @@
 """Specification: leaves answer one question, the algebra composes them, and predicates qualify too."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from common import Money, ValidationError
@@ -114,3 +116,13 @@ def test_catalog_is_an_immutable_snapshot() -> None:
     catalog = Catalog(products)
     products.append(DEAR_BOOK)
     assert len(catalog) == 1 and catalog.products == (CHEAP_BOOK,)
+
+
+def test_one_frozen_rule_tree_is_shared_safely_by_many_threads() -> None:
+    """Frozen leaves hold no per-call state, so one tree serves every request thread."""
+    spec = (InStock() & UNDER_100 & ~InCategory("electronics")) | InCategory("books")
+    catalog = sample_catalog()
+    expected = [p.sku for p in catalog.search(spec)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: [p.sku for p in catalog.search(spec)], range(200)))
+    assert results == [expected] * 200

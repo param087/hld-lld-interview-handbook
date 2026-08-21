@@ -57,23 +57,23 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Write QPS | 1B writes/day / 10^5 s | 10k/s average, 30k/s peak |
 | Replica operations at peak | 30k writes x N=3; 300k reads x R=2 | 90k replica writes/s, 600k replica reads/s |
 | Dataset | 1B keys x 1 KB (key, value, clock) | 1 TB logical, x3 replicas = 3 TB raw |
-| Storage growth per year | 10% of writes create keys: 100M/day x 1 KB x 365 | ~36 TB/year logical, ~110 TB/year raw |
-| Bandwidth | 300k reads/s x 1 KB = 300 MB/s = 2.4 Gbps; 30k writes/s x 1 KB x 3 replicas = 90 MB/s internal | Fits a 10 Gbps NIC (1.25 GB/s) per node with a wide margin |
-| Hot set (80/20 rule) | 20% of 1B keys x 1 KB | 200 GB across the cluster, ~7 GB per node of 30: row cache plus OS page cache, no separate cache tier |
-| Nodes | 90k replica writes/s at ~5k-10k writes/s per node = 9-18 nodes; x1.5-2 headroom | ~30 nodes, ~100 GB of data each (2-20 TB of disk per node is not the constraint; write throughput is) |
+| Storage growth per year | 0.1% of writes create keys: 1M/day x 1 KB x 365 | ~0.4 TB/year logical, ~1.1 TB/year raw: the 1 TB dataset grows about a third per year |
+| Bandwidth | 300k reads/s x 1 KB = 300 MB/s; 30k writes/s x 1 KB x 3 = 90 MB/s internal | 2.4 Gbps, well inside a 10 Gbps NIC per node |
+| Hot set (80/20 rule) | 20% of 1B keys x 1 KB | 200 GB, ~7 GB per node of 30: row cache plus page cache, no separate cache tier |
+| Nodes | 90k replica writes/s at ~5k-10k per node = 9-18; x1.5-2 headroom | ~30 nodes, ~100 GB each (disk is not the constraint; write throughput is) |
 
-Two things to say out loud. First, the dataset is small but the operation rate is high, so the cluster is sized by **replica operations per second**, not by disk: every client write becomes N replica writes and every read becomes R replica reads. Second, the latency target is about tail behaviour: a quorum read finishes when the second-fastest of three replicas answers, so one slow node (compaction, GC pause) hurts only if it is one of two needed, which is exactly why coordinators send to all N and wait for R.
+Two things to say out loud. The dataset is small but the operation rate is high, so the cluster is sized by **replica operations per second**, not by disk: each client write is N replica writes and each read is R replica reads. And the latency target is a tail-behaviour target — a quorum read finishes when the second-fastest of three replicas answers, which is why coordinators send to all N and wait for R.
 
 ## API design
 
 | Endpoint | Request | Response | Notes |
 |---|---|---|---|
 | `GET /v1/keys/{key}?r=2` | — | `200 {versions: [{value, clock}], context}` | Returns every sibling; `context` is an opaque base64 vector clock. `404` when only tombstones remain. |
-| `PUT /v1/keys/{key}?w=2` | `{value}` + header `X-Context` | `200 {clock, acked_by}` | With the context of the last read the write supersedes what that read saw; without it the write is blind and may create a sibling. A retry with the same context and value supersedes its own first attempt, so retries are safe. |
-| `DELETE /v1/keys/{key}` | header `X-Context` | `204` | Writes a tombstone that replicates like any version and is garbage-collected after a grace period. |
-| `POST /v1/keys:batch-get` | `{keys: [..]}` (up to 100) | `200 {items}` | Fan-out per key; no atomicity across keys. No pagination anywhere: there are no scans. |
-| `GET /v1/admin/ring` | — | `200 {version, nodes: [{id, tokens, status}]}` | Clients cache the ring and route straight to a replica (one network hop instead of two). |
-| `POST /v1/admin/nodes` | `{node_id, address}` | `202` | Membership change, propagated by gossip; the node streams in its key ranges before serving. |
+| `PUT /v1/keys/{key}?w=2` | `{value}` + header `X-Context` | `200 {clock, acked_by}` | With a context the write supersedes what that read saw; without one it is blind and may create a sibling. Retrying with the same context supersedes the first attempt, so retries are safe. |
+| `DELETE /v1/keys/{key}` | header `X-Context` | `204` | Tombstone: replicates like any version, garbage-collected after a grace period. |
+| `POST /v1/keys:batch-get` | `{keys: [..]}` (up to 100) | `200 {items}` | Fan-out per key; no atomicity across keys. No pagination: there are no scans. |
+| `GET /v1/admin/ring` | — | `200 {version, nodes: [{id, tokens, status}]}` | Clients cache the ring and route straight to a replica, saving a hop (~500 µs in-datacenter). |
+| `POST /v1/admin/nodes` | `{node_id, address}` | `202` | Membership change, propagated by gossip; the node streams in its ranges before serving. |
 
 `r` and `w` are bounded by N; the coordinator rejects combinations it cannot satisfy with healthy replicas (`503`) rather than silently lowering them.
 
@@ -129,7 +129,7 @@ Store choices, one sentence each:
 - **Partition key** is `hash(key)`: the token decides the preference list, and nothing else is ever queried, so there is no sort key and no secondary index.
 - **Per-node engine** is an LSM tree (RocksDB/LevelDB style): writes are appends, reads check the memtable, then Bloom filters, then at most one block per SSTable (deep dive 5).
 - **Siblings** are stored under one key as a list of `(clock, value)` pairs; a read returns them all and the client's next write collapses them.
-- **Hints** live in a separate column family keyed by `(home node, key)` so a recovered node's backlog can be streamed without scanning the data files.
+- **Hints** live in a separate column family keyed by `(home node, key)` so a recovered node's backlog streams without scanning the data files.
 - **Membership and tokens** are a small gossip-replicated table; every node holds the full ring, which is why any node can coordinate any request.
 
 ## High-level design
@@ -187,8 +187,9 @@ sequenceDiagram
     end
     RA-->>CO: ack (W=2 reached)
     CO-->>CL: 200 {clock}
-    RD-->>CO: ack (late, counted for durability only)
-    alt D is down
+    alt D is up
+        RD-->>CO: ack (late, counted for durability only)
+    else D is down
         CO->>RE: store(key, version) with a hint for D
         RE-->>CO: ack
         Note over RE,RD: E hands the write to D once gossip marks D up
@@ -217,7 +218,7 @@ sequenceDiagram
     CO-)RD: read repair: store the winning versions
 ```
 
-Walk-through: the coordinator is whichever replica the client library picked, not a special node, so there is no leader to elect and no single point to overload. A write costs one WAL append locally plus one parallel round trip to the other replicas; the client is answered at the W-th acknowledgement. A read costs the same round trip plus the reconciliation step, which is a comparison of vector clocks, not a merge of values. Everything slower than that (handing hints back, Merkle comparisons, compaction) happens off the request path.
+Walk-through: the coordinator is whichever replica the client library picked, not a special node, so there is no leader to elect and no single point to overload. A write costs one local WAL append plus one parallel round trip, answered at the W-th acknowledgement; a read costs the same round trip plus a comparison of vector clocks, not a merge of values. Everything slower — hint handoff, Merkle comparisons, compaction — runs off the request path.
 
 ## Deep dive: consistent hashing and preference lists
 
@@ -232,11 +233,11 @@ The probing question is "which nodes hold a key, and what moves when you add a n
 
 ![Hash ring](../../assets/img/figures/hash_ring.png){ width="800" }
 
-Every node takes many pseudo-random positions (tokens) on a 2^32 ring; a key belongs to the first token clockwise from `hash(key)`. Virtual nodes fix both weaknesses of the plain ring: load evens out statistically, and when a node leaves, its arcs are inherited by many different successors, so the rebalancing work spreads across the cluster instead of landing on one neighbour. Weighted nodes are free: a box with twice the disk gets twice the tokens.
+Every node takes ~100 pseudo-random tokens on a 2^32 ring and a key belongs to the first token clockwise from `hash(key)`, so load evens out statistically and a departing node's arcs are inherited by many successors instead of one neighbour. Weighted nodes are free: twice the disk, twice the tokens. The mechanics and the key-movement measurements are on the [partitioning page](../fundamentals/partitioning-and-consistent-hashing.md).
 
-The **preference list** is the ring walk continued: the first N *distinct physical* nodes clockwise from the key. Skipping further tokens of a node already chosen is the detail candidates forget; without it, two of your three replicas can sit on the same machine. Production rings also skip nodes in the same rack, so a rack failure costs one replica, not three. The list is usually longer than N (say N + 2) so a coordinator knows which healthy nodes to use when a home replica is down.
+What is specific to this store is the **preference list**: the ring walk continued to the first N *distinct physical* nodes clockwise from the key. Skipping further tokens of a node already chosen is the detail candidates forget; without it, two of your three replicas sit on one machine. Production rings also skip nodes in the same rack, so a rack failure costs one replica, not three, and the list runs longer than N (say N + 2) so a coordinator knows which healthy nodes to fall back to.
 
-The hash must be stable across processes and languages because every client computes the same ring; a salted `hash()` is exactly the wrong tool. With a cached ring the client library sends a request straight to a replica, which removes one network hop (~500 µs in the same datacenter) from every operation. The ring in the module is `HashRing` from the [partitioning page](../fundamentals/partitioning-and-consistent-hashing.md); the cluster only asks it two questions:
+The hash must be stable across processes and languages because every client computes the same ring; a salted `hash()` is exactly the wrong tool. The cluster asks `HashRing` only two questions:
 
 ```python
 ring = HashRing(["A", "B", "C", "D", "E"], vnodes=64)
@@ -257,15 +258,15 @@ The probing question is "what do W and R buy me, and what does W + R > N actuall
 | N=3, W=3, R=1 | Slowest, fails if any replica is down | Fastest | Read-heavy keys; writes stall on one slow replica | Configuration data |
 | N=3, W=1, R=3 | Fastest | Slowest, fails if any replica is down | Write-heavy keys | Event ingestion |
 
-The overlap argument is the whole point: with W + R > N, the set of replicas that acknowledged the last write and the set a reader contacts must share at least one node, so the newest version is among the R answers and the clock comparison picks it out. With W + R <= N, a reader can contact only replicas that missed the write, which is the stale-read demo on the [replication page](../fundamentals/replication.md).
+The overlap argument is the whole point: with W + R > N the write quorum and the read quorum share at least one node, so the newest version is among the R answers and the clock comparison picks it out. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md).
 
 Three nuances worth volunteering:
 
-- **The coordinator sends to all N and waits for W (or R).** This turns tail latency into a race the slowest replica loses, and it is why a node pausing for compaction rarely shows up in the p99. It costs N replica operations per request, which is how the estimation sized the cluster.
-- **W + R > N is not linearizability.** Two clients can still write concurrently and both succeed; the store does not order them, it records both (deep dive 3). And a sloppy quorum (deep dive 4) can acknowledge a write on a stand-in that a later read quorum never contacts, so under failure the guarantee becomes "eventually".
+- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, which is why a compaction pause rarely shows up in the p99 — at the cost of N replica operations per request, the number that sized the cluster.
+- **W + R > N is not linearizability.** Two clients can write concurrently and both succeed: the store records both rather than ordering them (deep dive 3). A sloppy quorum (deep dive 4) can also acknowledge on a stand-in that a later read quorum never contacts, so under failure the guarantee degrades to "eventually".
 - **Durability is W, not N.** W=2 means two WALs have the write when the client hears "ok"; the third copy arrives asynchronously, via the late acknowledgement or a hint.
 
-Latency budget for the default: a write is one WAL append with fsync plus one same-datacenter round trip (~500 µs) to collect the second acknowledgement, well inside a 20 ms p99. A read is the same round trip plus an SSD random read (~16 µs) per SSTable consulted when the row is not in memory, so the 10 ms p99 is spent on queueing and on the slowest of two replicas, not on disk. The module validates the configuration with `quorum_overlaps` from the replication page and exposes the answer as `KVCluster.overlapping`, so a test can assert that a W=1, R=1 cluster is knowingly non-overlapping.
+Latency budget for the default: a write is one fsync-ed WAL append plus one same-datacenter round trip (~500 µs) for the second acknowledgement, well inside 20 ms; a read adds ~16 µs of SSD per SSTable consulted. The p99 goes on queueing and on the slowest of two replicas, not on disk. `KVCluster.overlapping` exposes the `quorum_overlaps` check so a test can assert that a W=1, R=1 cluster is knowingly non-overlapping.
 
 ## Deep dive: versioning with vector clocks and read repair
 
@@ -277,15 +278,15 @@ The probing question is "two clients update the same cart while a node is down; 
 | Vector clocks (per-coordinator counters) | Both kept as siblings | Immune | A few (node, counter) pairs | Application must merge siblings |
 | CRDTs (merge is a property of the type) | Merged deterministically | Immune | Type-dependent | Only for data with a natural merge (sets, counters) |
 
-Choose vector clocks for data whose updates you cannot afford to lose (carts, profiles), and offer last-writer-wins per keyspace for data where a lost update is cheap (metrics, session heartbeats). Cassandra chose LWW for simplicity and lives with the consequences; Dynamo and Riak chose vector clocks. Say this explicitly, because interviewers want to hear you name the trade, not pick a side by reflex.
+Choose vector clocks where a lost update matters (carts, profiles) and offer last-writer-wins per keyspace where it does not (metrics, session heartbeats). Cassandra chose LWW for simplicity; Dynamo and Riak chose clocks. Name the trade rather than picking a side by reflex.
 
-How the clocks work: every version is stamped `{coordinator: counter, ...}`. A coordinator stamps a new write by taking the context the client sent (the clock of the version it read) and incrementing its own counter. If clock A has every counter of B at least as high, A *descends from* B and B is dropped. If neither descends from the other the writes were concurrent and both are kept as siblings. A read returns all siblings plus the merged clock as the context; a write carrying that context descends from every sibling and collapses them. In the demo, two clients read `{C:1}`, write through A and D, and produce `{A:1, C:1}` and `{C:1, D:1}`; the client that reads both writes back with context `{A:1, C:1, D:1}` and a single version remains.
+How the clocks work: every version is stamped `{coordinator: counter, ...}`, and a coordinator stamps a write by incrementing its own counter in the context the client sent. If clock A has every counter of B at least as high, A *descends from* B and B is dropped; if neither descends from the other, the writes were concurrent and both survive as siblings. A read returns all siblings plus their merged clock as the context, and a write carrying that context descends from every sibling and collapses them — in the demo `{A:1, C:1}` and `{C:1, D:1}` become one version once a client writes back with `{A:1, C:1, D:1}`.
 
 ```python title="code/hld/kv_cluster.py — clocks, versions and reconciliation"
 --8<-- "code/hld/kv_cluster.py:vector_clock"
 ```
 
-**Read repair** is the cheap half of anti-entropy: when the coordinator sees that one of the R replicas returned a dominated version (or nothing), it writes the winning versions back to that replica after answering the client. Hot keys therefore converge on their own, and only cold keys need the Merkle sweep of deep dive 4. Two details to mention: clocks are truncated (Dynamo keeps the ten most recent entries, dropping the oldest, which can create false siblings but bounds metadata), and a coordinator bumps its counter past any counter it already stores for the key, so a blind write can never be dominated by a version the coordinator holds.
+**Read repair** is the cheap half of anti-entropy: when one of the R replicas returns a dominated version or nothing, the coordinator writes the winners back to it after answering the client. Hot keys converge on their own; only cold keys need the Merkle sweep of deep dive 4. Two details to mention: clocks are truncated (Dynamo keeps the ten newest entries, bounding metadata at the price of false siblings), and a coordinator bumps its counter past any it already holds for the key, so a blind write is never dominated by a version it stores.
 
 ## Deep dive: failure handling with gossip, sloppy quorums, hinted handoff and anti-entropy
 
@@ -299,7 +300,7 @@ The probing question is "a node dies mid-afternoon; walk me through the next hou
 | Read repair | Stale replicas of hot keys | On the next read | One extra write per stale answer |
 | Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hash comparisons proportional to the differences, not to the data |
 
-The sequence is this. **Gossip** spreads membership and liveness: each node periodically exchanges its view with a random peer, and a node that stops answering is marked suspect locally rather than removed from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which stores the version plus a **hint** naming D. The write still reaches W nodes, so the client is never refused: that is the sloppy quorum, and it is why the guarantee of deep dive 2 weakens under failure. When gossip reports D back, E streams the hinted versions to D and drops its own copy (**hinted handoff**). If E itself dies before that, the hint is gone; the scheduled **anti-entropy** job compares Merkle trees of the key range that A and D share, descends only into subtrees whose hashes differ, and ships the keys in the differing buckets. In the demo a single lost update among 200 keys is found with 13 hash comparisons.
+The sequence is this. **Gossip** spreads membership and liveness: each node exchanges its view with a random peer, and a silent node is marked suspect locally rather than removed from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes instead to the **next healthy node past the preference list** (E), which stores the version plus a **hint** naming D — the write still reaches W nodes, so the client is never refused. That **sloppy quorum** is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E streams the hinted versions to D and drops its copy (**hinted handoff**); if E dies first the hint is lost, and the scheduled **anti-entropy** job compares Merkle trees of the range A and D share, descending only into subtrees whose hashes differ. The demo finds one lost update among 200 keys with 13 hash comparisons.
 
 The cluster class ties the pieces together: `put` resolves home replicas to healthy holders, stamps the clock, and records hints; `recover` hands them off; `anti_entropy` repairs what the hints missed:
 
@@ -323,7 +324,7 @@ strict quorum, C and A down        -> write of 'cart:42': only 1 replica(s) reac
 anti-entropy A vs D, lost hint     -> 1 bucket differs after 13 hash comparisons, compared ['item:164', 'item:7']; D now holds 'v7-updated'
 ```
 
-Permanent failures are handled by an operator: removing a node from the ring makes its successors stream the arcs from the remaining replicas, which is bounded work because virtual nodes spread the arcs around.
+Permanent removal is an operator action: the leaving node's successors stream its arcs from the remaining replicas, bounded work because virtual nodes scatter the arcs.
 
 ## Deep dive: the node write path from WAL to memtable to SSTable
 
@@ -438,7 +439,7 @@ What breaks first, and what you do about it:
     Range queries need order-preserving partitioning, which trades the even spread of hashing for hot ranges; Cassandra's answer is a hashed partition key plus a clustering key that is sorted *within* the partition. Secondary indexes are either local (each node indexes its own data, queries fan out to every node) or global (an index table partitioned by the indexed value, updated asynchronously, eventually consistent).
 
 ??? question "Where do the Bloom filters live and what do they cost?"
-    One filter per SSTable, held in memory. At ~10 bits per key, 1B keys across 30 nodes cost ~40 MB per node, trivial next to the row cache. They let a point read skip almost every table, so the read touches one block in one table in the common case instead of one block per table.
+    One filter per SSTable, held in memory. At ~10 bits per key, the ~100M key copies each of the 30 nodes stores cost ~125 MB per node, trivial next to the row cache. They let a point read skip almost every table, so the read touches one block in one table in the common case instead of one block per table.
 
 !!! tip "Interview tip"
     Say "preference list" in your first sentence about replication and draw the ring with the N distinct nodes marked. It tells the interviewer you know the replicas are not "the next N tokens", and it sets up every later answer: sloppy quorums write to the node after the list, hints name a node in the list, anti-entropy compares nodes that share a list.

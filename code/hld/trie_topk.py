@@ -63,8 +63,10 @@ class TrieNode:
 class TopKTrie:
     """Every node caches the answer for its prefix, so a query is a walk and a return.
 
-    ``_lock`` guards ``_root``, ``_weights`` and ``_nodes``. In production the serving replica is
-    read-only and immutable, and the lock only exists on the builder; it is kept here so the
+    ``_lock`` serialises the writers (``set_weight``, ``bump``) against each other and guards
+    ``_weights`` and ``_nodes``; ``suggest`` takes no lock because every cached list is an
+    immutable tuple that a writer rebinds in one step. In production the serving replica is
+    read-only anyway and the lock only exists on the builder; it is kept here so the
     incremental ``bump`` path can be exercised under threads.
     """
 

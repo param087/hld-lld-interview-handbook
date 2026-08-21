@@ -134,7 +134,7 @@ Draw the builder, then say: "in Python I would start with keyword-only arguments
 
 ## Real-world usage
 
-- **`argparse.ArgumentParser`** is configured in steps (`add_argument` in any order, `add_subparsers`, `set_defaults`) and built by `parse_args`, which checks required options, choices and types all at once and returns a `Namespace`.
+- **`argparse.ArgumentParser`** is configured in steps (`add_argument` in any order, `add_subparsers`, `set_defaults`) and built by `parse_args`, which applies types, choices and required-ness at the end and returns a `Namespace`; it lists every missing required argument in one message, though the first bad value still stops it.
 - **`xml.etree.ElementTree.TreeBuilder`**: `start`, `data` and `end` assemble a tree and `close` hands back the root; the parser driving it is the Director.
 - **String building**: `parts.append(...)` followed by `"".join(parts)`, or `io.StringIO`, is the idiom Java needs `StringBuilder` for.
 - **Generative query APIs**: SQLAlchemy's `select(...).where(...).order_by(...)` and Django's `QuerySet.filter(...)` return a new statement from every step and run nothing until execution, which is the `replace` form at scale.

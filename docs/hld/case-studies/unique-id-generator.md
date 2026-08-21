@@ -216,7 +216,7 @@ The layout is a budget you spend deliberately:
 | Machine id | 10 | 1,024 workers (Twitter split it 5 datacenter + 5 worker bits) | enough for a fleet; no two live workers may share a value |
 | Sequence | 12 | 4,096 per ms per worker | ~4M ids/s per worker, far above the ~1k-10k QPS one app server handles |
 
-The dials you can mention: a fleet of 10,000 workers takes 3 bits from the sequence (512/ms is still 500k/s per worker); Instagram minted inside each Postgres shard with 41 time bits, 13 shard-id bits and 10 sequence bits, so an id also tells you which shard holds the row; a second-resolution timestamp (KSUID style) buys 1,000x more lifetime at the cost of ordering granularity.
+The dials you can mention: a fleet of 8,000 workers takes 3 bits from the sequence (13 machine bits is 8,192 workers, and 512/ms is still 500k/s per worker); Instagram minted inside each Postgres shard with 41 time bits, 13 shard-id bits and 10 sequence bits, so an id also tells you which shard holds the row; a second-resolution timestamp (KSUID style) buys 1,000x more lifetime at the cost of ordering granularity.
 
 The arithmetic lives in `Layout`; `compose` and `decompose` are the shifts that the interviewer will ask you to write on the board:
 

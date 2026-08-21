@@ -7,7 +7,7 @@ description: The checkout core in code — all-or-nothing stock holds with a TTL
 ## TL;DR
 
 - You build the checkout core: a catalog you can filter, a cart with no prices in it, stock that is **reserved, then committed or released**, and an order that walks a state machine.
-- Four decisions carry the interview: **one lock per SKU taken in sorted order** so a multi-item basket is all-or-nothing and cannot deadlock, a **TTL on every hold** so abandoned carts give stock back, an **idempotency key with in-progress and completed states** so a retried checkout never buys twice, and **compensate across services, roll back inside one**.
+- Four decisions carry the interview: **one lock per SKU taken in sorted order** so a basket is all-or-nothing and cannot deadlock, a **TTL on every hold** so abandoned carts give stock back, an **idempotency key with in-progress and completed states**, and **compensate across services, roll back inside one**.
 - Patterns that earn their place: Facade (`CheckoutFacade`), State (the order table), Strategy (discount, tax, shipping), Event Bus plus Observer, Repository and Unit of Work, Specification (catalog search), Null Object (`NoDiscount`).
 
 ## Problem statement
@@ -54,7 +54,7 @@ description: The checkout core in code — all-or-nothing stock holds with a TTL
 - **Cart** holds SKU ids and quantities for one customer or one guest — and no prices at all.
 - **InventoryItem** is one SKU in one warehouse: `available`, `reserved`, and a `version` counter. It is the row a SQL `UPDATE ... WHERE version = ?` would target.
 - **StockHold** is an all-or-nothing reservation across SKUs and warehouses, made of **HoldLine**s, with `expires_at` and a `HoldStatus`.
-- **Order** owns immutable **OrderItem** price snapshots, the address, the three money components, the id of the hold that backs it, and its idempotency key.
+- **Order** owns immutable **OrderItem** price snapshots, the address, the money components, the hold that backs it, and its idempotency key.
 - **InventoryService** owns every stock row and the per-SKU locks; **OrderService** owns the order repository and every transition; **CheckoutFacade** sequences them and owns the idempotency store.
 - **EventBus** carries `order.placed`, `order.paid`, `order.shipped` and `order.cancelled` to **NotificationService**, **LowStockMonitor** and **ShipmentDispatcher**; **UnitOfWork** groups repository writes; **Specification** composes catalog filters.
 
@@ -468,7 +468,7 @@ ORD-1 shipped via TRK-ORD-1
 **Edge cases handled**: one line of a basket short, a SKU split across two warehouses, an empty cart, a guest cart merging into an existing one, a repriced SKU after the order was placed, a total that moved between cart and checkout, a declined card, a hold that expired before payment, cancelling before and after payment, a return, a stale row version, and a subscriber that throws.
 
 !!! warning "Common mistake"
-    Modelling stock as a single `quantity` integer and decrementing it at checkout. It looks simpler and it cannot answer any of the questions that follow: what happens when the payment fails, how do you know how much you could still sell, and what stops a bot holding your whole stock in a cart? Two counters plus a hold with a deadline answers all three, and it is the same shape as `SELECT ... FOR UPDATE` plus a reservations table, so it survives the move to a real database.
+    Modelling stock as a single `quantity` integer and decrementing it at checkout. It cannot answer any of the questions that follow: what happens when the payment fails, how much could you still sell, and what stops a bot holding your whole stock in a cart? Two counters plus a hold with a deadline answers all three, and it is the same shape as `SELECT ... FOR UPDATE` plus a reservations table.
 
 ## Extensibility and follow-ups
 
@@ -479,7 +479,7 @@ ORD-1 shipped via TRK-ORD-1
 - **Persistence and scale**: `InMemoryRepository` becomes a SQL repository, `UnitOfWork.__enter__` becomes `BEGIN`, and the per-SKU lock becomes `SELECT ... FOR UPDATE` ordered by SKU id — or the optimistic `WHERE version = ?` the `version` field already anticipates. Beyond that it is a system design question, and the [HLD case study](../../hld/case-studies/ecommerce-platform.md) is this problem with those constraints.
 
 !!! tip "Interview tip"
-    When they say "now make sure we never oversell", do not reach for a lock immediately. Say the invariant first: "`available + reserved` is the physical stock and only changes when goods move; overselling means `available` went negative." Then choose the mechanism — a per-SKU lock here, `SELECT ... FOR UPDATE` in Postgres, an atomic decrement in Redis — and say why the granularity is a SKU. Stating the invariant before the mechanism is the single clearest senior signal in this problem.
+    When they say "now make sure we never oversell", do not reach for a lock. Say the invariant first: "`available + reserved` is the physical stock and only changes when goods move; overselling means `available` went negative." Then choose the mechanism — a per-SKU lock here, `SELECT ... FOR UPDATE` in Postgres, an atomic decrement in Redis — and say why the granularity is a SKU. Invariant before mechanism is the clearest senior signal in this problem.
 
 ## Tests
 

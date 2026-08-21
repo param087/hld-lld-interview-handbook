@@ -54,7 +54,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 |---|---|---|
 | Write QPS | 100M / 10^5 x 1.15 | ~1.2k/s average, ~3.5k/s peak |
 | Read QPS | 1.2k/s x 100 | ~120k/s average, ~360k/s peak |
-| Code space | 62^7 = 3.5 x 10^12 vs 3.65 x 10^10 links per decade | ~96 years of runway |
+| Code space | 62^7 = 3.5 x 10^12 vs 3.65 x 10^10 links per year | ~96 years of runway |
 | Storage | 100M x 500 B = 50 GB/day, x 365 x 10 | ~180 TB; ~550 TB raw at replication factor 3 |
 | Redirect bandwidth | 120k/s x 500 B of headers | ~60 MB/s = ~0.5 Gbps, ~1.5 Gbps peak |
 | Cache size, 80/20 rule | 20% of 10B daily reads x 500 B | ~1 TB/day of hot *bytes* — see below |
