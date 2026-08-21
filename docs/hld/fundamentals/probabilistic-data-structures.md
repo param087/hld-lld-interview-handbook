@@ -41,9 +41,9 @@ A plain Bloom filter cannot delete: clearing one item's bits would erase other i
 
 ### Count-Min Sketch: frequencies and heavy hitters
 
-A Count-Min Sketch is ``d`` rows of ``w`` counters with a different hash per row. Each event increments one counter per row; an estimate is the minimum over the rows. Collisions only ever add, so the estimate is never below the truth, and it exceeds it by at most ``eps x N`` (``N`` is the total event count) with probability ``1 - delta`` when ``w = e/eps`` and ``d = ln(1/delta)``. For ``eps = 0.001`` and ``delta = 0.01`` that is 2,719 x 5 = 13,595 counters, ~54 KB with 4-byte counters, for any number of distinct keys. The error is relative to the whole stream, which is why the sketch is good at heavy hitters and useless for the tail: a key seen 7,000 times in a 50,000-event stream is off by at most 50, a key seen 3 times may read as 40. Sketches of the same shape merge counter by counter, so each shard keeps its own and a coordinator sums them.
+A Count-Min Sketch is ``d`` rows of ``w`` counters with a different hash per row. Each event increments one counter per row; an estimate is the minimum over the rows. Collisions only ever add, so the estimate is never below the truth, and it exceeds it by at most ``eps x N`` (``N`` is the total event count) with probability ``1 - delta`` when ``w = e/eps`` and ``d = ln(1/delta)``. For ``eps = 0.001`` and ``delta = 0.01`` that is 2,719 x 5 = 13,595 counters, ~53 KB with 4-byte counters, for any number of distinct keys. The error is relative to the whole stream, which is why the sketch is good at heavy hitters and useless for the tail: a key seen 7,000 times in a 50,000-event stream is off by at most 50, a key seen 3 times may read as 40. Sketches of the same shape merge counter by counter, so each shard keeps its own and a coordinator sums them.
 
-Top-K is a sketch plus a min-heap of ``k`` candidates: for each event, update the sketch, read the estimate, and if it beats the smallest candidate, evict that one. Memory is the sketch plus ``k`` entries, independent of the key space, and per-shard top-K lists merge by re-ranking the union of candidates ([Design a Top-K heavy hitters service](../case-studies/top-k-heavy-hitters.md)). At the metrics scale of 1M events/s, exact counters for 100M distinct keys would be gigabytes per window; the sketch stays at 54 KB per window.
+Top-K is a sketch plus a min-heap of ``k`` candidates: for each event, update the sketch, read the estimate, and if it beats the smallest candidate, evict that one. Memory is the sketch plus ``k`` entries, independent of the key space, and per-shard top-K lists merge by re-ranking the union of candidates ([Design a Top-K heavy hitters service](../case-studies/top-k-heavy-hitters.md)). At the metrics scale of 1M events/s, exact counters for 100M distinct keys would be gigabytes per window; the sketch stays at 53 KB per window.
 
 ### HyperLogLog: cardinality with 1.04/sqrt(m) error
 
@@ -89,7 +89,7 @@ flowchart TD
 | Bloom filter | membership | false positives only | 11.7 KB for 10k keys at 1% | no | bitwise OR | SSTable lookups, crawler URL-seen, cache-miss shield |
 | Counting Bloom | membership | false positives only | 4-8x a Bloom filter | yes | counter sum | sets that churn |
 | Cuckoo filter | membership | false positives only | below Bloom under ~3% error | yes | no | same as Bloom, with deletes |
-| Count-Min Sketch | frequency | overcount by <= eps x N | 54 KB at eps 0.001, delta 0.01 | no | counter sum | heavy hitters, rate spikes, top-K with a heap |
+| Count-Min Sketch | frequency | overcount by <= eps x N | 53 KB at eps 0.001, delta 0.01 | no | counter sum | heavy hitters, rate spikes, top-K with a heap |
 | HyperLogLog | distinct count | +/- 1.04/sqrt(m), both ways | 16 KB at p = 14 (0.81%) | no | register max | unique visitors, distinct IPs, per-shard roll-ups |
 | MinHash / SimHash | similarity | estimate of Jaccard / cosine | hundreds of bytes per item | n/a | n/a | near-duplicate detection |
 | Exact set or map | any | none | grows with keys (4.8 GB for 300M ids) | yes | union | when the answer must be right |

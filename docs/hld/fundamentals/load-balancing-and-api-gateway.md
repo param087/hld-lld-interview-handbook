@@ -41,8 +41,8 @@ flowchart LR
 
 - **Round robin** hands each request to the next backend. It assumes equal machines and equal requests; a slow backend still gets its full share.
 - **Weighted round robin** gives a 2x machine 2x the turns. Use the *smooth* variant: weights 5:1:1 should produce `A A B A C A A`, not `A A A A A B C`, a five-request burst on A every cycle.
-- **Least connections** picks the backend with the fewest in-flight requests, so slow requests and slow machines attract less work. With many balancers each sees only its own slice; the fix is **power of two choices**: pick two at random, use the less loaded — no coordination, and no herd onto one "least loaded" node.
-- **Least response time** ranks backends by a latency moving average plus in-flight count (Envoy's least-request, Linkerd's EWMA). Beware the failing backend: one that returns errors in a millisecond looks like the fastest machine and is rewarded with traffic unless errors count as load.
+- **Least connections** picks the backend with the fewest in-flight requests, so slow requests and slow machines attract less work. With many balancers each sees only its own slice; the fix is **power of two choices**: pick two at random, use the less loaded — no coordination, and no herd onto one "least loaded" node. Envoy's least-request is this in P2C form.
+- **Least response time** ranks backends by a latency moving average plus in-flight count (Nginx Plus `least_time`, Linkerd's EWMA). Beware the failing backend: one that returns errors in a millisecond looks like the fastest machine and is rewarded with traffic unless errors count as load.
 - **IP hash** routes `hash(client_ip) mod N` for affinity without cookies. It breaks twice: a corporate NAT puts thousands of users on one backend, and a change of N remaps most clients.
 - **Consistent hashing** maps a key (user id, session, cache key) onto a ring so each key sticks to one instance, and losing an instance moves only its share, about 1/N: a 4-backend pool losing one remaps roughly 3/4 of the keys under mod-N but exactly the dead quarter on a ring. A bounded-load variant caps any backend above the mean and spills to the next node. This is the algorithm for cache locality; details in [Partitioning, sharding and consistent hashing](partitioning-and-consistent-hashing.md).
 
@@ -158,6 +158,7 @@ active probe on C   : 2 passes -> healthy; available = ['A', 'C']
 A and C ejected too : NoAvailableBackend, answer 503 (no healthy, non-ejected backend in the pool)
 ```
 
+The last line shows the guard rail this module omits: without a maximum ejection percentage, one outage empties the pool.
 
 ## In the interview
 

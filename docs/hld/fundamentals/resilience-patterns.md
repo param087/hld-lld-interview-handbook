@@ -109,7 +109,7 @@ Backpressure is the signal that flows backwards: a consumer that cannot keep up 
 
 The failure mode that takes down whole systems is a loop: a slow dependency fills caller pools, callers time out and retry, retries add load, the dependency slows further. Every pattern above cuts that loop somewhere. Restart is its own trap: a service that survived at a 95% cache hit rate sends 20x the traffic to the database while cold.
 
-The availability arithmetic explains the urgency: dependencies in series multiply, so four at 99.9% give 99.6% — 3.5 hours a month instead of 43.8 minutes — and breakers and fallbacks are what remove a dependency from that product. None of it is real until injected deliberately: kill an instance, add 500 ms of latency, blackhole a dependency, first in staging and then in production with a small blast radius and an abort switch.
+The availability arithmetic explains the urgency: dependencies in series multiply, so four at 99.9% give 99.6% — ~2.9 hours a month instead of 43.8 minutes — and breakers and fallbacks are what remove a dependency from that product. None of it is real until injected deliberately: kill an instance, add 500 ms of latency, blackhole a dependency, first in staging and then in production with a small blast radius and an abort switch.
 
 ## Trade-offs
 
@@ -163,7 +163,7 @@ backoff from base 100 ms, cap 10 s, 6 attempts
 two transient timeouts then success -> 'ok'
   3 attempts for 1 call (amplification 3.0x), slept 63 ms
 
-total outage, 100-token budget, 100 calls: the throttle closed on call 13, at 0 tokens left
+total outage, 100-token budget, 100 calls: the throttle closed on call 13 at half full; 0 tokens left after all 100 calls
   137 attempts for 100 calls = 1.37x load on a dying dependency, instead of 4x without a budget
 ```
 
@@ -233,7 +233,7 @@ Phrases that signal depth: "the deadline is stamped at the edge and every hop pa
 - **A fallback that fails or lies**: one calling the same database is not a fallback, and unlabelled stale data is a correctness bug. Fix: keep fallbacks local, mark degraded responses.
 
 !!! warning "Common mistake"
-    Retrying at every layer. Browser, gateway, service and client library each retry: three attempts at three layers is 27 requests for one user action, in a synchronised burst exactly when the dependency is weakest. Pick one layer — the one closest to the dependency, which knows what is idempotent — and make the rest fail fast.
+    Retrying at every layer. Gateway, service and client library each retry: three attempts at three layers is 27 requests for one user action, in a synchronised burst exactly when the dependency is weakest. Pick one layer — the one closest to the dependency, which knows what is idempotent — and make the rest fail fast.
 
 ## Self-check
 

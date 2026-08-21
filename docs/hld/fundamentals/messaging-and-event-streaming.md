@@ -22,7 +22,7 @@ The log wins on throughput because it appends at the tail and reads forward: an 
 
 ### Kafka anatomy: topics, partitions, offsets, consumer groups
 
-A topic is split into partitions, each an ordered, immutable sequence of records with dense offsets. The producer picks `hash(key) % partitions`, or round-robin for unkeyed records. Each partition has one leader broker for all reads and writes, plus followers. A consumer group assigns every partition to exactly one member (extra members idle) and commits offsets to `__consumer_offsets`, a compacted internal topic, so a restarted member resumes where the group stopped.
+A topic is split into partitions, each an ordered, immutable sequence of records with dense offsets. The producer picks `murmur2(key) % partitions`; unkeyed records go round-robin in old clients and, since 2.4, stick to one partition until the batch is full, which is round-robin per batch rather than per record. Each partition has one leader broker for all reads and writes, plus followers. A consumer group assigns every partition to exactly one member (extra members idle) and commits offsets to `__consumer_offsets`, a compacted internal topic, so a restarted member resumes where the group stopped.
 
 Size partitions from the consumers: a 70k msg/s peak x 1 KB = 70 MB/s fits one broker's ingest, but at ~1k msg/s per consumer (the app-server figure) you need 70 members, hence at least 70 partitions. Take 2-3x headroom: adding partitions later remaps `hash(key) % N` and breaks per-key order.
 
@@ -61,7 +61,7 @@ flowchart LR
 
 ### Replication: ISR, acks and the high watermark
 
-With replication factor 3 a partition has a leader and two followers that fetch from it like consumers. The in-sync replica set (ISR) is the leader plus every follower caught up within `replica.lag.time.max.ms`; the high watermark is the highest offset the whole ISR holds, and consumers read only below it, so a failover to an ISR member never exposes a record the new leader lacks. `acks=0` does not wait; `acks=1` waits for the leader's log and loses the record if the leader dies before followers fetch; `acks=all` waits for the whole ISR, gated by `min.insync.replicas`. RF 3 with `min.insync.replicas=2` survives one dead broker without losing acknowledged writes and refuses writes (`NotEnoughReplicas`) with two down: consistency over availability. Keep `unclean.leader.election.enable=false` unless uptime is worth acknowledged data.
+With replication factor 3 a partition has a leader and two followers that fetch from it like consumers. The in-sync replica set (ISR) is the leader plus every follower caught up within `replica.lag.time.max.ms`; the high watermark marks how far every in-sync replica has caught up, and consumers never read past it, so a failover to an ISR member never exposes a record the new leader lacks. `acks=0` does not wait; `acks=1` waits for the leader's log and loses the record if the leader dies before followers fetch; `acks=all` waits for the whole ISR, gated by `min.insync.replicas`. RF 3 with `min.insync.replicas=2` survives one dead broker without losing acknowledged writes and refuses writes (`NotEnoughReplicas`) with two down: consistency over availability. Keep `unclean.leader.election.enable=false` unless uptime is worth acknowledged data.
 
 `acks=all` adds one same-datacenter round trip, ~0.5 ms per batch, amortised over hundreds of records; across regions it would add ~70 ms, so mirror asynchronously instead of stretching the ISR.
 
@@ -73,7 +73,7 @@ Compaction (`cleanup.policy=compact`) keeps the newest record per key without re
 
 ### Ordering, keys and rebalances
 
-Ordering holds inside a partition and nowhere else: one key, one partition, one member at a time. Three things break it: retries with several in-flight batches and no idempotence, changing the partition count, and a hot key, which cannot be spread without losing its order; salt it (`tenant#shard`) only for work that needs no order.
+Ordering holds inside a partition and nowhere else: one key, one partition, one member at a time. Three things take it away: retries with several in-flight batches and no idempotence, changing the partition count, and salting a hot key — the only way to spread one key over several partitions, and it trades that key's order for throughput, so salt (`tenant#shard`) only work that needs no order.
 
 A rebalance redistributes partitions when a member joins, leaves, misses heartbeats for `session.timeout.ms` or fails to `poll` within `max.poll.interval.ms`. Eager rebalancing revokes every partition, one member runs the assignor (range, round-robin, sticky) and processing stops until the new generation starts; cooperative rebalancing revokes only partitions that move, and static membership (`group.instance.id`) lets a member restart without a rebalance. Either way the new owner resumes from the last committed offset, so whatever the old owner processed but did not commit runs again. That window is what your consumer must make idempotent.
 
@@ -116,7 +116,7 @@ sequenceDiagram
 
 ### Retries, DLQ, poison messages, backpressure and lag
 
-Retry transient failures with exponential backoff and jitter. Kafka has no per-message delay, so use retry topics (`orders-retry-1m`, `orders-retry-10m`) whose consumer pauses until a record is due; A poison message fails deterministically (bad schema, deleted account), and retrying it in place blocks its partition: head-of-line blocking. After N attempts publish it to a dead-letter topic with headers (source topic, partition, offset, exception, attempts), commit the offset, move on and alert on DLQ depth.
+Retry transient failures with exponential backoff and jitter. Kafka has no per-message delay, so use retry topics (`orders-retry-1m`, `orders-retry-10m`) whose consumer pauses until a record is due. A poison message fails deterministically (bad schema, deleted account), and retrying it in place blocks its partition: head-of-line blocking. After N attempts publish it to a dead-letter topic with headers (source topic, partition, offset, exception, attempts), commit the offset, move on and alert on DLQ depth.
 
 Backpressure is free with a pull model: consumers set the pace and the log absorbs the burst as lag; producers block when their buffer fills, so shed load upstream.
 

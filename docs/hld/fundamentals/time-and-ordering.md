@@ -123,7 +123,7 @@ A partitioned log gives it structurally: Kafka guarantees order within a partiti
 | Wall-clock timestamp | No | 8 B | Yes, but wrong | Caches, low-stakes LWW |
 | Lamport timestamp | No | 8 B | No | Log sequencing, tie-breaks |
 | Vector or version vector | Yes | ~24 B per replica | No | Dynamo, Riak, Voldemort |
-| Hybrid logical clock | Partly, via the pair | 12-16 B | Yes, within the drift bound | CockroachDB, MongoDB |
+| Hybrid logical clock | No, a total order like Lamport | 12-16 B | Yes, within the drift bound | CockroachDB, MongoDB |
 | TrueTime plus commit-wait | Not needed, order is real | 8 B plus a wait | Yes, exactly | Spanner |
 | Per-partition log offset | No, order is imposed | 8 B | No | Kafka, event sourcing |
 

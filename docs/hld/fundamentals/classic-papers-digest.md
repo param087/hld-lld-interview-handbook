@@ -42,7 +42,7 @@ flowchart LR
 ### Bigtable (2006)
 
 **Problem.** Semi-structured data at web scale, with range scans, cheaper than a relational database.
-**Key idea.** A sparse, sorted map keyed by row, column family and timestamp, split into **tablets** by contiguous row ranges. Writes go to a commit log and a memtable, flushed to immutable SSTables and merged by compaction; Chubby holds the root location and tablet-server liveness.
+**Key idea.** A sparse, sorted map keyed by row, column (`family:qualifier`) and timestamp, split into **tablets** by contiguous row ranges. Writes go to a commit log and a memtable, flushed to immutable SSTables and merged by compaction; Chubby holds the root location and tablet-server liveness.
 **Takeaways.** Sorted row keys make range scans cheap, so key design is the whole design. LSM storage turns random writes into sequential ones. Layering on GFS and Chubby means Bigtable owns no replication of its own.
 **In interviews.** Anything wide-column — time series, messages by conversation, feeds — plus the LSM versus B-tree deep dive.
 

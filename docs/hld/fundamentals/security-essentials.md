@@ -67,7 +67,8 @@ sequenceDiagram
     APP->>APP: verifier = random string, challenge = base64url(sha256(verifier))
     APP->>U: redirect to /authorize with client_id, scope, redirect_uri, challenge, state
     U->>AS: sign in and consent
-    AS-->>APP: redirect back with one-time code and state
+    AS-->>U: redirect to redirect_uri with one-time code and state
+    U->>APP: deliver the code (this hop is interceptable, which is why PKCE exists)
     APP->>AS: POST /token with code and verifier
     AS->>AS: sha256(verifier) equals stored challenge
     AS-->>APP: access token, refresh token, ID token (OIDC)
@@ -82,7 +83,7 @@ TLS gives confidentiality and integrity on the wire and authenticates the server
 
 ### Passwords and encryption: hashing, KMS and envelope encryption
 
-Passwords are never encrypted, only hashed with a slow, salted, memory-hard function — argon2id or bcrypt — because a leaked table must resist offline guessing. Tune the work factor so one hash costs about as much as a cross-region round trip, ~70 ms: invisible once per login, but it caps an attacker at 1 s / 70 ms = ~14 guesses per second per core. A per-user salt defeats precomputed tables; a server-side pepper kept outside the database defeats a dump of the table alone.
+Passwords are never encrypted, only hashed with a slow, salted function — argon2id, which is also memory-hard, or bcrypt — because a leaked table must resist offline guessing. Tune the work factor so one hash costs about as much as a cross-region round trip, ~70 ms: invisible once per login, but it caps an attacker at 1 s / 70 ms = ~14 guesses per second per core. A per-user salt defeats precomputed tables; a server-side pepper kept outside the database defeats a dump of the table alone.
 
 Encryption at rest protects against stolen disks and snapshots, and it is where key management lives. A KMS holds root keys in hardware and never exports them, but a KMS call is a network round trip and a rate-limited service. Envelope encryption fixes that: encrypt each object with its own data key, encrypt the data key with the KMS key, store the wrapped key beside the object. Rotating the KMS key re-wraps small data keys, not petabytes of data, and destroying a key is a deletion of everything it protected.
 

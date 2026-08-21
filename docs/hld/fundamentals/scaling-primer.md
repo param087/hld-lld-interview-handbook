@@ -88,7 +88,7 @@ Some work should not happen while the user waits: notifications, fan-out to 200 
 
 ### Stage 8: sharding
 
-At 100M DAU the example writes ~6.4k/s at peak, inside one primary's 5k-20k but not for long, and at 1 KB per write stores ~6.4 TB a year, crossing a server's 2-20 TB within a few years. Replicas do not help; every replica holds every write. Sharding splits the data across primaries by a partition key — `user_id`, hashed, so a user's rows stay together and the load spreads — each shard with its own replicas and cache. The cost is every query without the key, every cross-shard transaction and every rebalance ([Partitioning, sharding and consistent hashing](partitioning-and-consistent-hashing.md)). Shard last, after replicas, caching, scaling up and archiving cold data, because sharding alone changes the application.
+At 100M DAU the example writes ~6.4k/s at peak, inside one primary's 5k-20k but not for long, and at 1 KB per write (~2.1k writes/s average, ~180 GB/day) stores ~67 TB a year, past a server's 2-20 TB within months. Replicas do not help; every replica holds every write. Sharding splits the data across primaries by a partition key — `user_id`, hashed, so a user's rows stay together and the load spreads — each shard with its own replicas and cache. The cost is every query without the key, every cross-shard transaction and every rebalance ([Partitioning, sharding and consistent hashing](partitioning-and-consistent-hashing.md)). Shard last, after replicas, caching, scaling up and archiving cold data, because sharding alone changes the application.
 
 ### Stage 9: multiple datacenters and GeoDNS
 
@@ -136,7 +136,7 @@ Phrases that signal depth: "the app tier is stateless, so scaling it is a number
     Around 10k-100k QPS for an L7 balancer terminating TLS. Then DNS or an L4 balancer spreads traffic over several L7 balancers, and GeoDNS over regions; the balancer tier is stateless, so it scales like the app tier.
 
 ??? question "How does the architecture change between 10M and 100M DAU?"
-    The shape stays; the data tier changes. Reads at ~70k/s peak need the cache and replicas to carry nearly everything, writes at ~6.4k/s peak and ~6.4 TB a year bring sharding into view, and global users push toward a second region.
+    The shape stays; the data tier changes. Reads at ~70k/s peak need the cache and replicas to carry nearly everything, writes at ~6.4k/s peak and ~67 TB a year bring sharding into view, and global users push toward a second region.
 
 !!! tip "Interview tip"
     Narrate the stages as numbers, not boxes: "one server to ~1k QPS, one primary to 5k-20k writes a second and 2-20 TB, one cache node to ~100k ops a second". An interviewer who hears the thresholds trusts every box you draw.
