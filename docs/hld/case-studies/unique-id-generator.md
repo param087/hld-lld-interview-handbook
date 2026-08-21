@@ -7,7 +7,7 @@ description: Snowflake-style 64-bit, time-sortable ids at 100k/s with no coordin
 ## TL;DR
 
 - The ask is **64-bit, unique, roughly time-ordered ids at ~100k/s**, minted by hundreds of processes without talking to each other. The answer is a Snowflake layout: 41 bits of milliseconds since a custom epoch, 10 of machine id, 12 of per-millisecond sequence.
-- Coordination happens **once per process start** (lease a machine id from ZooKeeper), never per id. Minting is a lock, a clock read and two shifts: well under a microsecond.
+- Coordination happens **once per process start** — lease a machine id from ZooKeeper — never per id. Minting is a lock, a clock read and two shifts, under a microsecond.
 - The cruxes an interviewer probes: (1) why 64 bits and why k-sortable, (2) UUID vs auto-increment vs ticket server vs Snowflake, (3) **what happens when the clock goes backwards**, (4) machine-id assignment and sequence overflow, (5) when a 128-bit ULID, KSUID or UUIDv7 wins.
 
 ## Problem statement and clarifying questions
@@ -18,11 +18,11 @@ description: Snowflake-style 64-bit, time-sortable ids at 100k/s with no coordin
 |---|---|
 | Must ids be numeric and 64-bit? | Yes: they are primary keys everywhere, and 128-bit keys double every index. |
 | Strictly ordered or roughly ordered? | Roughly (k-sortable): later ids are larger, except within a few ms across machines. |
-| Throughput? | ~100k ids/s platform-wide at peak; a hot service may need 4k/ms for a moment. |
+| Throughput? | ~100k ids/s platform-wide at peak; a hot service may need 4k/ms briefly. |
 | Latency budget? | In-process minting under 1 ms p99; a network call only for polyglot clients. |
 | Fleet size? | Up to ~1,000 minting processes across two or three datacenters. |
-| May ids leak information? | Creation time and machine are fine internally; not for public tokens (deep dive 5). |
-| Coordination allowed? | At start-up, yes; on the hot path, no — a coordinator outage must not stop minting. |
+| May ids leak information? | Creation time and machine are fine internally, not for public tokens (deep dive 5). |
+| Coordination allowed? | At start-up yes, on the hot path no — a coordinator outage must not stop minting. |
 | Lifetime? | Decades: the layout must not run out of timestamp bits in our lifetime. |
 | Multi-datacenter? | Yes, each mints independently; no cross-region call per id. |
 
@@ -31,21 +31,21 @@ description: Snowflake-style 64-bit, time-sortable ids at 100k/s with no coordin
 ### Functional
 
 - `next_id()` returns a unique positive 64-bit integer, from a library embedded in every service plus a thin gRPC/HTTP service for clients that cannot embed it.
-- Ids are k-sortable: sorting by id is sorting by creation time to within clock skew.
+- Ids are k-sortable: sorting by id sorts by creation time to within clock skew.
 - `decompose(id)` returns creation time, machine and sequence for debugging and time-range partitioning.
-- A worker obtains a machine id at start-up and releases it on shutdown or crash.
+- A worker leases a machine id at start-up and releases it on shutdown or crash.
 
 ### Non-functional
 
 - Uniqueness is absolute: no duplicate under restarts, clock steps, failovers or simultaneous starts.
 - Throughput: 100k ids/s platform-wide; ~4M/s per worker (4,096 per ms); no shared counter on the hot path.
-- Latency: p99 under 1 ms in-process (a mutex is ~17 ns); p99 under 5 ms for the service form, one ~500 µs same-datacenter round trip plus queueing.
+- Latency: p99 under 1 ms in-process (a mutex is ~17 ns); under 5 ms for the service form, one ~500 µs round trip plus queueing.
 - Availability: 99.99% for minting — the machine-id registry, its only dependency, is off the hot path.
 - Lifetime: at least 50 years of timestamps from the custom epoch.
 
 ### Out of scope
 
-Cryptographic unguessability, human-friendly short codes (see [Design a URL shortener](url-shortener.md)), strict global ordering (a consensus problem), and caller-side idempotency.
+Cryptographic unguessability, short human-friendly codes ([URL shortener](url-shortener.md)), strict global ordering (a consensus problem), and caller-side idempotency.
 
 ## Estimation
 
@@ -58,27 +58,27 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Read QPS (decompose, admin) | on-call and tooling only | negligible, well under 1k/s |
 | Storage per year (key bytes) | 35k/s x 3 x 10^7 s = ~10^12 ids/year x 8 B | ~8 TB/year of key bytes; 16 TB with 16 B UUIDs, before indexes and replication |
 | Bandwidth (service form only) | 100k/s x ~50 B per JSON envelope | ~5 MB/s = 40 Mbps; the library form sends nothing |
-| Cache size (ticket-range buffer) | 1,000 clients x 1,000 pre-fetched ids x 8 B | 8 MB total — a per-client buffer, not a cache tier |
+| Cache size (ticket-range buffer) | 1,000 clients x 1,000 pre-fetched ids x 8 B | 8 MB total — a per-client buffer, no cache tier |
 | Timestamp lifetime | 2^41 ms / (3.15 x 10^10 ms per year) | ~69 years from the custom epoch |
 | Coordination load | 1,024 workers x 1 lease renewal per 10 s | ~100 tiny writes/s to ZooKeeper |
 
-Say out loud what the table proves: **the generator stores nothing and sends nothing**; its only scarce resources are bits and the correctness of a clock. That is why the conversation is about the bit budget, not about servers.
+Say what the table proves: **the generator stores nothing and sends nothing**; its scarce resources are bits and the correctness of a clock. That is why the conversation is about the bit budget, not servers.
 
 ## API design
 
 | Endpoint | Request | Response | Notes |
 |---|---|---|---|
-| library `next_id()` | — | `int` | The primary interface; no network, no allocation beyond the integer. |
+| library `next_id()` | — | `int` | The primary interface; no network, no allocation. |
 | `POST /v1/ids?count=100` | — | `200 {ids: ["192656126771200000", ...]}` | Ids are **strings in JSON**: JavaScript numbers lose precision above 2^53. `count` caps at 1,000. |
 | `GET /v1/ids/{id}` | — | `200 {created_at, machine_id, sequence}` | Decompose for debugging; read-only and cacheable. |
-| `POST /v1/ranges` | `{service, count}` | `200 {start, end}` | Ticket-server fallback: a contiguous range from a database counter, used only when a worker cannot lease a machine id. |
+| `POST /v1/ranges` | `{service, count}` | `200 {start, end}` | Ticket-server fallback: a contiguous range from a database counter, only when a worker cannot lease a machine id. |
 | `GET /v1/machines` | — | `200 {leases: [{machine_id, owner, expires_at}]}` | Admin view of the registry. |
 
-Idempotency is deliberately absent: ids are fungible, so a retried `POST /v1/ids` burns a few, which beats deduplicating. `count` bounds every response, so there is no pagination.
+Idempotency is deliberately absent: ids are fungible, so a retried `POST /v1/ids` burns a few, which beats deduplicating. `count` bounds every response, so no pagination.
 
 ## Data model
 
-**The registry and the fallback counter are the only persistent state; ids themselves are never stored by the generator.**
+**The registry and the fallback counter are the only persistent state; the generator never stores ids.**
 
 ```mermaid
 erDiagram
@@ -112,16 +112,16 @@ erDiagram
     }
 ```
 
-Store choices, with the sentence to say for each:
+Store choices, one sentence each:
 
-- **MACHINE_LEASE**: ephemeral nodes in ZooKeeper or leases in etcd — consensus-backed, with session expiry, because the property you need is "exactly one live owner per id". Size is irrelevant, linearizability is everything.
+- **MACHINE_LEASE**: ephemeral nodes in ZooKeeper or leases in etcd — consensus-backed with session expiry, because the property you need is "exactly one live owner per id". Size is irrelevant, linearizability is everything.
 - **ID_LAYOUT**: the config store, versioned and read once at start-up. Every worker pins the version it minted with; a layout change is a deliberate migration, never a rolling config push.
-- **TICKET_RANGE**: one row per range in a single-leader database (`UPDATE counter SET next = next + 1000 RETURNING next`). It is the fallback path, so its ~5k-20k writes/s ceiling does not matter.
+- **TICKET_RANGE**: one row per range in a single-leader database (`UPDATE counter SET next = next + 1000 RETURNING next`) — the fallback path, so its ~5k-20k writes/s ceiling does not matter.
 - **WORKER.last_seen_ms**: persisted every second so a restarted worker refuses to mint until the wall clock passes the last timestamp it issued (deep dive 3).
 
 ## High-level design
 
-**v1: a library embedded in every service, a thin ID service for polyglot clients, and ZooKeeper off the hot path.**
+**v1: a library embedded in every service, a thin ID service for polyglot clients, ZooKeeper off the hot path.**
 
 ```mermaid
 flowchart LR
@@ -156,7 +156,7 @@ flowchart LR
     s_id -->|"registry unavailable"| d_tickets
 ```
 
-**Write path (minting): one registration per process, then ids without any network call.**
+**Write path (minting): one registration per process, then ids with no network call.**
 
 ```mermaid
 sequenceDiagram
@@ -183,7 +183,7 @@ sequenceDiagram
     G-->>S: compose(last_ms, 7, sequence)
 ```
 
-**Read path: the same bits serve debugging and time-range queries in the store.**
+**Read path: the same bits serve debugging and time-range queries.**
 
 ```mermaid
 sequenceDiagram
@@ -201,7 +201,7 @@ sequenceDiagram
     DB-->>A: rows in creation order, no created_at index needed
 ```
 
-Walk-through: leasing a machine id — the one consensus-backed operation — happens once per process start and is amortised over millions of ids. After that every id is a mutex, a clock read and integer arithmetic, so throughput is bounded by the sequence bits, not by any server. The read path shows the payoff of time in the high bits: a primary-key range scan *is* a time-range query.
+Walk-through: leasing a machine id — the one consensus-backed operation — happens once per process start and is amortised over millions of ids. Every id after that is a mutex, a clock read and integer arithmetic, so throughput is bounded by the sequence bits, not by a server. The read path shows the payoff of time in the high bits: a primary-key range scan *is* a time-range query.
 
 ## Deep dive: the requirements and the bit budget
 
@@ -216,7 +216,7 @@ The layout is a budget you spend deliberately:
 | Machine id | 10 | 1,024 workers (Twitter split it 5 datacenter + 5 worker) | enough for a fleet; no two live workers share a value |
 | Sequence | 12 | 4,096 per ms per worker | ~4M ids/s per worker, far above the ~1k-10k QPS an app server handles |
 
-The dials to mention: 8,000 workers takes 3 bits from the sequence (13 machine bits, and 512/ms is still 500k/s per worker); Instagram mints inside each Postgres shard with 41/13/10, so an id also names the shard; a second-resolution timestamp buys 1,000x the lifetime at the cost of ordering granularity.
+The dials to mention: 8,000 workers takes 3 bits from the sequence (13 machine bits, and 512/ms is still 500k/s per worker); a second-resolution timestamp buys 1,000x the lifetime at the cost of ordering granularity.
 
 `compose` and `decompose` are the shifts an interviewer will ask you to write on the board:
 
@@ -238,7 +238,7 @@ Reject the simple options for concrete reasons, not by reflex:
 | Snowflake | 64-bit | k-sortable to the ms | none (machine id leased at start-up) | ~4M/s per worker | clock steps, machine-id reuse, 69-year lifetime |
 | UUIDv7, ULID, KSUID | 128-160-bit | ms or s | none | unlimited | 2x the key bytes; see deep dive 5 |
 
-Snowflake wins because it is the only 64-bit option with no per-id coordination. Auto-increment is fine for a single-database product — say so — but stops being fine the day you shard, since two shards' sequences collide unless you pre-partition them with step and offset, a ticket server by another name. Ticket servers put a ~500 µs round trip and a hot row on the write path; pre-fetching ranges trades that for gaps and for ids that no longer encode time.
+Snowflake wins because it is the only 64-bit option with no per-id coordination. Auto-increment is fine for a single-database product — say so — but stops being fine the day you shard, since two shards' sequences collide unless you pre-partition them with step and offset, a ticket server by another name. Ticket servers put a ~500 µs round trip and a hot row on the write path; pre-fetched ranges trade that for gaps and ids that no longer encode time.
 
 **Choosing an id scheme: the questions in the order to ask them.**
 
@@ -257,17 +257,17 @@ flowchart TD
 
 ## Deep dive: clock skew and the backwards clock
 
-"What happens when NTP steps the clock back 200 ms on a worker that just minted 3,000 ids?" separates candidates who have run this from those who have read about it. A naive generator uses the wall clock as the timestamp and resets the sequence when it changes; after a backwards step it revisits milliseconds it already used, and its first new id duplicates one minted 200 ms ago.
+"What happens when NTP steps the clock back 200 ms on a worker that just minted 3,000 ids?" separates candidates who have run this from those who have read about it. A naive generator takes the timestamp from the wall clock and resets the sequence when it changes; after a backwards step it revisits milliseconds it already used, and its first new id duplicates one minted 200 ms ago.
 
 Backwards steps are common — NTP steps rather than slews past its threshold, VMs jump after live migration, leap seconds are smeared differently across clouds ([time and ordering](../fundamentals/time-and-ordering.md)). Skew *between* machines is milder: it blurs cross-worker ordering but never duplicates, because the machine bits differ.
 
-The guard has two layers. The generator keeps its own **logical millisecond**, which the wall clock can only pull forward. Within one logical millisecond it increments the sequence, and on overflow it *borrows* the next millisecond rather than spinning, so a frozen clock never blocks minting. Second, the gap between logical and wall clock is bounded: beyond `max_drift_ms` the generator raises and the caller retries elsewhere. A small step is absorbed silently; a large one becomes an incident instead of a duplicate.
+The guard has two layers. The generator keeps its own **logical millisecond**, which the wall clock can only pull forward; within one logical millisecond it increments the sequence, and on overflow it *borrows* the next millisecond rather than spinning, so a frozen clock never blocks minting. Second, the gap between logical and wall clock is bounded: beyond `max_drift_ms` the generator raises and the caller retries elsewhere. A small step is absorbed silently, a large one becomes an incident instead of a duplicate.
 
 ```python title="code/hld/snowflake.py — the generator with the drift guard"
 --8<-- "code/hld/snowflake.py:generator"
 ```
 
-The demo exercises a frozen clock, a 3 ms step and a 50 ms step:
+The demo exercises a frozen clock and 3 ms and 50 ms steps:
 
 ```text
 layout: 41/10/12 bits, 1024 machines, 4096 ids/ms/machine, 69 years of timestamps
@@ -286,7 +286,7 @@ The layer the code does not show is **restarts**: the logical clock lives in mem
 
 ## Deep dive: machine-id assignment and sequence overflow
 
-Two live workers sharing a machine id produce duplicates the moment their clocks agree, so assignment must guarantee **exactly one live holder per id**. The options:
+Two live workers sharing a machine id duplicate the moment their clocks agree, so assignment must guarantee **exactly one live holder per id**:
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -322,7 +322,7 @@ sequenceDiagram
     Note over W,Z: session expiry deletes the node, the id becomes reusable, the old worker has stopped first
 ```
 
-Sequence overflow is the other half of this crux. 4,096 ids per millisecond is ~4M/s, so reaching it means a benchmark or one process minting for the whole platform. Production Snowflake spins until the next millisecond; this implementation borrows it, keeping latency flat under the same drift bound. Treat saturation as a capacity signal — add workers rather than steal machine-id bits.
+Sequence overflow is the other half. 4,096 ids per millisecond is ~4M/s, so reaching it means a benchmark or one process minting for the whole platform. Production Snowflake spins until the next millisecond; this implementation borrows it, keeping latency flat under the same drift bound. Treat saturation as a capacity signal — add workers rather than steal machine-id bits.
 
 ```python title="code/hld/snowflake.py — the machine-id lease"
 --8<-- "code/hld/snowflake.py:registry"
@@ -330,7 +330,7 @@ Sequence overflow is the other half of this crux. 4,096 ids per millisecond is ~
 
 ## Deep dive: ULID, KSUID and UUIDv7
 
-When the 64-bit constraint is lifted — client-generated ids, offline-first apps, ids that must not reveal volume — a timestamp-prefixed 128-bit id gives ordering with no coordination at all, not even at start-up:
+Lift the 64-bit constraint — client-generated ids, offline-first apps, ids that must not reveal volume — and a timestamp-prefixed 128-bit id gives ordering with no coordination at all:
 
 | Scheme | Bits | Time part | Random part | Text form | Notes |
 |---|---|---|---|---|---|
@@ -339,7 +339,7 @@ When the 64-bit constraint is lifted — client-generated ids, offline-first app
 | ULID | 128 | 48 bits, ms | 80 bits | 26-char Crockford base32 | lexicographically sortable as text; monotonic variant increments within a ms |
 | KSUID | 160 | 32 bits, s | 128 bits | 27-char base62 | second resolution; 128 random bits make it safe to generate anywhere |
 
-How to choose in the room: Snowflake when the key must be 8 bytes and you control the fleet; UUIDv7 when the database and drivers already support it and you want zero infrastructure; ULID or KSUID when ids are created on clients and must be unguessable. All three 128-bit schemes keep B-tree locality because the high bits are time; the cost is doubled keys everywhere, another ~8 TB/year. None sorts across machines beyond clock skew either — "k-sortable" is the honest word for all of them.
+How to choose in the room: Snowflake when the key must be 8 bytes and you control the fleet; UUIDv7 when the database and drivers already support it and you want zero infrastructure; ULID or KSUID when ids are created on clients and must be unguessable. All three keep B-tree locality because the high bits are time; the cost is doubled keys everywhere, another ~8 TB/year. None sorts across machines beyond clock skew — "k-sortable" is the honest word for all of them.
 
 ## Scaling, bottlenecks and failure modes
 
@@ -379,7 +379,7 @@ What breaks first, and what you do about it:
 - **A hot worker saturating 4,096/ms**: the drift budget fills, `ClockDriftError` fires, and the alert says to spread minting. It is the only throughput limit here, and it is per process, so it scales with the fleet.
 - **Registry outage**: existing workers mint until their leases expire (5-10 minute leases, 10 s renewals); new workers cannot register and fall back to database ranges. An ensemble per datacenter keeps the blast radius local.
 - **Clock step on one worker**: absorbed up to `max_drift_ms`, beyond which the worker refuses to mint and is drained. Monitor `borrowed_ms` and the wall-versus-logical gap as first-class metrics.
-- **Time-sorted keys create a hot partition** in range-partitioned stores, since every insert lands in the newest range. Hash the id for partition choice and keep time order inside the partition ([partitioning](../fundamentals/partitioning-and-consistent-hashing.md)).
+- **Time-sorted keys create a hot partition** in range-partitioned stores: every insert lands in the newest range. Hash the id for partition choice, keep time order inside it ([partitioning](../fundamentals/partitioning-and-consistent-hashing.md)).
 - **Cross-datacenter ordering**: ids from two regions interleave within their clock skew; true order for a stream needs a single sequencer.
 - **Precision loss in clients**: a 64-bit id in a JSON number silently rounds in JavaScript, so every API returns ids as strings.
 - **Lifetime**: a 2024 epoch lasts into the 2090s; an alert at 80% of the timestamp range is cheap insurance.
@@ -389,10 +389,10 @@ What breaks first, and what you do about it:
 | Decision | Chosen | Alternatives | Why |
 |---|---|---|---|
 | Id width | 64-bit Snowflake | UUIDv4, UUIDv7/ULID/KSUID | 8-byte keys and k-sortable order; 128 bits only when coordination must be zero |
-| Bit split | 41 / 10 / 12 | 41 / 13 / 10 (Instagram), second-resolution time | 1,024 workers and 4,096/ms cover a large fleet; easy to re-split |
-| Sequence overflow | borrow the next millisecond, bounded by the drift budget | spin until the next millisecond | flat latency, testable with a fake clock, same safety bound |
+| Bit split | 41 / 10 / 12 | 41 / 13 / 10 (Instagram), second-resolution time | 1,024 workers and 4,096/ms cover a large fleet |
+| Sequence overflow | borrow the next millisecond, bounded by the drift budget | spin until the next millisecond | flat latency, testable with a fake clock |
 | Backwards clock | logical clock plus `max_drift_ms`, then refuse | throw immediately, sleep the skew | absorbs NTP jitter, turns a big step into an incident, never duplicates |
-| Machine id | ZooKeeper/etcd lease, lowest free id | static config, IP-derived | exactly one live holder by construction; crashed workers are reclaimed |
+| Machine id | ZooKeeper/etcd lease, lowest free id | static config, IP-derived | exactly one live holder; crashed workers are reclaimed |
 | Delivery | embedded library first, thin service second | service only | removes the ~500 µs round trip from the availability equation |
 | Public exposure | ids as JSON strings | JSON numbers | 2^53 precision limit in JavaScript |
 
@@ -427,8 +427,8 @@ What breaks first, and what you do about it:
 | Minutes | What to say and draw |
 |---|---|
 | 0-5 | Clarify: 64-bit, k-sortable, ~100k ids/s, no coordination on the hot path, multi-datacenter, decades of lifetime. |
-| 5-9 | Estimation: 100k/s is nothing per machine (4,096/ms each); 8 TB/year of key bytes; 69 years from a custom epoch; ~100 writes/s to ZooKeeper. |
-| 9-15 | Options table: reject UUIDv4 (size, locality), auto-increment (single leader), ticket server (round trip); pick Snowflake and draw the bit table. |
+| 5-9 | Estimation: 100k/s is nothing per machine (4,096/ms each); 8 TB/year of key bytes; 69 years of epoch; ~100 writes/s to ZooKeeper. |
+| 9-15 | Options table: reject UUIDv4 (size, locality), auto-increment (single leader), ticket server (round trip); pick Snowflake, draw the bit table. |
 | 15-24 | v1 diagram: library plus thin service; write path (register once, then lock, clock, shifts); read path (decompose, time-range scans). |
 | 24-38 | Deep dives: backwards clock and drift guard, machine-id lease with fencing, sequence overflow; ULID/KSUID/UUIDv7 if 128 bits come up. |
 | 38-45 | Failure modes (registry outage, hot partition from time-sorted keys, JavaScript precision) and the trade-offs table. |

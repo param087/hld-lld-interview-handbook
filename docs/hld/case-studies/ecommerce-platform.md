@@ -304,15 +304,13 @@ The probing question is "two buyers take the last unit at the same instant." Ava
 | Pessimistic row lock | `SELECT ... FOR UPDATE` for the checkout's duration | The transaction spans a payment call: pool exhaustion |
 | Sharded counters | Split one SKU into N counters, take from any | Sell-out is only visible when every shard is empty |
 
-The base design uses the **conditional decrement plus a reservation with a TTL**: all-or-nothing across an order's lines, idempotent per `order_id`, version-checked when the caller acted on an earlier read. An expired reservation is reclaimed lazily by the next reserve as well as by a sweeper, so stuck stock cannot outlive its TTL:
+The base design uses the **conditional decrement plus a reservation with a TTL**: all-or-nothing across an order's lines, idempotent per `order_id` while the hold is live, version-checked when the caller acted on an earlier read. The lazy sweep runs *before* that idempotency check rather than after, so an expired reservation is reclaimed by the next reserve as well as by a sweeper and stuck stock cannot outlive its TTL:
 
 ```python title="code/hld/inventory_reservation.py — reserve, commit, release"
 --8<-- "code/hld/inventory_reservation.py:inventory"
 ```
 
-Two details inside `reserve` decide whether that idempotency key helps or hurts. The lazy sweep runs **before** the key is consulted, so a hold whose TTL lapsed but which no sweeper has reached yet is expired rather than mistaken for a live one. And only a **held or committed** reservation counts as a retry: a saga that compensated leaves its reservation `released`, and handing that dead hold back to a retried checkout would give the caller units it no longer owns and a commit that can only fail. A retry after a compensation must take a fresh hold, or fail honestly because the stock has gone.
-
-The reservation also records the stock `versions` it was taken against. That is an **audit record**, carried on the reserve event and deliberately never re-read at commit time: a held reservation's units are already out of `available`, so nobody else could have taken them and there is nothing to compare against. A [seat hold](ticketing-and-reservations.md) does re-check its versions, because its seats become takeable the moment its TTL lapses — the difference is worth naming out loud, since an interviewer will ask why one checks and the other does not.
+Only a **held or committed** reservation counts as a retry: a saga that compensated leaves its reservation `released`, and handing that dead hold back would give the retried checkout units it no longer owns and a commit that can only fail. The `versions` a reservation records are an audit trail on the reserve event, never a commit-time check — the units are already out of `available`, so nothing can race them. A [seat hold](ticketing-and-reservations.md) does re-check its versions, because its seats become takeable the instant its TTL lapses.
 
 **Flash sales** break the base design, and the arithmetic says why: a row held for a ~500 µs round trip sustains roughly 2k updates/s, while a drop brings 100k attempts/s. Application scaling cannot help, because the contention is one row. Shard the counter into 64 buckets, each its own key or row, and route buyers by hashing their id. The only cost is that "sold out" needs a walk over the shards instead of one read:
 
@@ -376,7 +374,7 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-Running the module walks the whole flow: an all-or-nothing reservation, an idempotent retry, a stale-version rejection, a lazily reclaimed expiry, a retry after a compensation that takes a fresh hold rather than the released one, a completed saga, a compensated one, and a sharded flash sale.
+Running the module walks the whole flow: an all-or-nothing reservation, an idempotent retry, a stale-version rejection, a lazily reclaimed expiry, a retry after a compensation that takes a fresh hold, a completed saga, a compensated one, and a sharded flash sale.
 
 ```text
 ord-1 reserves 2 tshirt + 1 mug   -> rsv-1, available {'tshirt': (3, 2), 'mug': (1, 1), 'poster': (10, 0)}
@@ -473,7 +471,7 @@ What breaks first, and what you do about it:
     Admission tokens issued before any inventory code runs, per-user and per-instrument caps checked before the counter decrements, fingerprinting at the edge, and post-purchase cancellation of mass buys.
 
 ??? question "Where do idempotency keys actually matter here?"
-    Three places: `POST /v1/orders`, so a retried checkout makes one order; the reservation keyed by `order_id`, so a retried step does not reserve twice while its hold is live — a retry after a compensation takes a fresh hold; and the capture keyed by `order_id`, so a retry does not charge twice. Cart writes need no key: they are idempotent by shape.
+    Three places: `POST /v1/orders`, so a retried checkout makes one order; the reservation keyed by `order_id`, so a retried step does not reserve twice while its hold is live; and the capture keyed by `order_id`, so a retry does not charge twice. Cart writes need no key: they are idempotent by shape.
 
 ??? question "How would you add price and promotion changes safely?"
     Price is resolved at checkout from the catalog, never from the cart, and copied into the order line. The order then holds immutable evidence of what was agreed, and a promotion expiring mid-checkout produces a repricing prompt rather than a silent difference.

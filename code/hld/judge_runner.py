@@ -287,8 +287,8 @@ class SubmissionQueue:
         on ``submission_id``, so a late finisher rewrites the same answer rather than a second.
         """
         with self._lock:
-            self._require_current(submission_id, token)
-            del self._leases[submission_id]
+            lease = self._require_current(submission_id, token)
+            del self._leases[lease.submission_id]
 
     def _require_current(self, submission_id: str, token: str) -> Lease:
         """The lease must exist, carry this token, and not have run out."""
