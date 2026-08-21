@@ -164,9 +164,11 @@ nav:
           - Design Nearby Friends: hld/case-studies/nearby-friends.md
           - Design a payment system and digital wallet: hld/case-studies/payment-system.md
           - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
+          - Design an ad click aggregation system: hld/case-studies/ad-click-aggregation.md
           - Design a distributed cache: hld/case-studies/distributed-cache.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
           - Design a distributed job scheduler: hld/case-studies/job-scheduler.md
+          - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
   - LLD:
       - lld/index.md
       - Fundamentals:
