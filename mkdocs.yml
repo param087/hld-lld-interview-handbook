@@ -150,6 +150,7 @@ nav:
           - Geospatial indexing: hld/fundamentals/geospatial-indexing.md
           - Batch and stream processing: hld/fundamentals/batch-and-stream-processing.md
           - Deployments, feature flags and data migrations: hld/fundamentals/deployment-and-data-migrations.md
+          - Classic papers digest: hld/fundamentals/classic-papers-digest.md
       - Case studies:
           - hld/case-studies/index.md
           - Design a URL shortener: hld/case-studies/url-shortener.md
@@ -165,7 +166,9 @@ nav:
           - Design a payment system and digital wallet: hld/case-studies/payment-system.md
           - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
           - Design an ad click aggregation system: hld/case-studies/ad-click-aggregation.md
+          - Design a Top-K heavy hitters service: hld/case-studies/top-k-heavy-hitters.md
           - Design a distributed cache: hld/case-studies/distributed-cache.md
+          - Design S3 (with a GFS/HDFS variant): hld/case-studies/object-storage.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
           - Design a distributed job scheduler: hld/case-studies/job-scheduler.md
           - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
@@ -218,6 +221,8 @@ nav:
       - Problems:
           - lld/problems/index.md
           - Design a parking lot: lld/problems/parking-lot.md
+          - Design an in-memory cache (LRU, LFU, TTL): lld/problems/in-memory-cache.md
+          - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
   - Cheatsheets:
       - cheatsheets/index.md
       - Latency numbers and estimation tables: cheatsheets/latency-and-estimation.md
