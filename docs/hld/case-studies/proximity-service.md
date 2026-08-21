@@ -60,7 +60,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Geo index size | 100M x 16 B (id + cell) x 4 precisions | **~6.4 GB** — small enough to replicate to every search node |
 | Photo storage | 100M x 10 photos x 200 KB | ~200 TB in object storage behind a CDN |
 | Search bandwidth | 4.5k/s x 10 KB | ~45 MB/s = ~360 Mbps at the edge |
-| Cache size (80/20) | 150M searches/day x 10 KB x 0.2 | 300 GB of responses — but keyed by *cell* it collapses to a hot subset of the 6.4 GB index, a few GB of posting lists |
+| Cache size (80/20) | 150M searches/day x 10 KB x 0.2 | 300 GB of responses — keyed by *cell* it collapses to a hot slice of the 6.4 GB index |
 | Search nodes | 4.5k/s peak / ~1k QPS per node, x2 headroom | ~10 nodes, each holding the full index |
 
 The number to lead with is **6.4 GB**. A 100M-place index fits in one machine's memory, which means you do not shard it for capacity, you replicate it for throughput and latency — the opposite conclusion from most case studies, and the point the interviewer is checking you can reach.
@@ -241,7 +241,7 @@ The probing question is "why geohash and not a quadtree?" Answer it with the wor
 | S2 / H3 | Hilbert cells / hexagons | Better locality, uniform neighbour distances | More machinery than a read-mostly catalogue needs |
 | PostGIS R-tree | Tree over bounding boxes | One `ST_DWithin` query, no extra service | The database becomes the scaling limit at 1,500:1 reads |
 
-Choose the geohash prefix, and say why: **businesses barely move**, so a fixed grid's weakness — rebalancing under movement — never bites, while its strength, a string key that is simultaneously a cache key, a shard key and a database prefix, is what a read-heavy path wants. A quadtree's adaptive cells are the alternative worth weighing when points move every four seconds — though the [Uber dispatcher](ride-sharing.md) still takes geohash cells, because an index rebuilt from a log every few seconds never pays the rebalancing cost a quadtree saves.
+Choose the geohash prefix, and say why: **businesses barely move**, so a fixed grid's weakness — rebalancing under movement — never bites, while its strength, a string key that is simultaneously a cache key, a shard key and a database prefix, is what a read-heavy path wants. A quadtree's adaptive cells are the alternative when points move every four seconds, though the [Uber dispatcher](ride-sharing.md) still picks geohash: an index rebuilt from a log never pays for rebalancing.
 
 Uniform cells still cause skew: a precision-6 cell in Manhattan may hold 5,000 businesses and one in the desert none. Index at **several precisions at once** and let the query pick the level matching its radius. At 16 B per entry and four levels, 100M businesses cost 6.4 GB, which buys both a 500 m and a 20 km search without either scanning the other's territory.
 

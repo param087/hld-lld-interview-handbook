@@ -57,11 +57,11 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Suggestion QPS (read path) | 1B x 5 / 10^5 x 1.15 | ~58k/s average, ~175k/s peak |
 | Raw log volume | 1B x 500 B per log line | ~500 GB/day, ~180 TB/year before compaction |
 | Aggregated counts | 10M terms x ~40 B | ~400 MB per locale group |
-| Trie size | 10M terms x 20 chars, prefix sharing halves the node count: ~100M nodes x ~150 B (children + the cached top-K) | ~15 GB — one server's RAM |
+| Trie size | 10M terms x 20 chars, halved by prefix sharing, ~150 B/node | ~15 GB — one server's RAM |
 | Response bandwidth | 175k/s x 1 KB JSON | ~175 MB/s = ~1.4 Gbps, ~60% absorbed at the edge |
 | Edge cache, 80/20 rule | 20% of 5B daily reads x 1 KB | ~1 TB/day of hot bytes — see below |
 | Edge cache, distinct prefixes | top 1M prefixes x 1 KB | ~1 GB, small enough for every PoP |
-| Serving nodes | 175k/s / ~10k QPS per node x 1.5 | ~27 nodes, rounded up to 8 shards x 4 replicas = 32 |
+| Serving nodes | 175k/s / ~10k QPS per node x 1.5 | ~27 nodes, so 8 shards x 4 replicas |
 
 Two things to say out loud. **The trie fits in memory** — 15 GB is nothing next to 64-512 GB per server — so sharding is for throughput and blast radius, not capacity. And the 80/20 rule again counts reads rather than distinct keys: the *head of the prefix distribution* is about a gigabyte, which is why a modest edge cache absorbs most traffic.
 
@@ -247,7 +247,7 @@ flowchart TD
     n_cat --> n_cats["cats<br/>top: cats"]
 ```
 
-The cost moves to the write side. Changing one term's weight repairs the cached list at every node along that term's path — O(len(term) x k log k), a few hundred operations for a twenty-character query. Storing the list at every node roughly triples the trie's memory against a bare trie — that is already what the ~150 B per node in the estimation buys, and 15 GB is still one server.
+The cost moves to the write side. Changing one term's weight repairs the cached list at every node along that term's path — O(len(term) x k log k), a few hundred operations for a twenty-character query. Storing the list at every node roughly triples a bare trie's memory, which the ~150 B per node already covers.
 
 Two alternatives get raised and both lose. Keeping terms only at terminal nodes and scanning the subtree turns a keystroke into work proportional to the corpus — millions of terms under `c`. A sorted array with binary search finds the prefix range in O(log n) but still ranks whatever it finds, on every keystroke, for every user.
 

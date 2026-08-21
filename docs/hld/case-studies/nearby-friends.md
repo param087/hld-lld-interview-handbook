@@ -61,7 +61,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Cache size | 10M entries x ~100 B (user, lat, lon, time) | ~1 GB: sharded for throughput |
 | WebSocket servers | 10M / 100k sockets per server, x1.5 headroom | ~150 servers |
 | Bandwidth | 333k x ~100 B in, 333k x ~200 B out | ~33 MB/s in, ~67 MB/s out: not the constraint |
-| Storage per year | positions never reach disk | 0; keeping history would cost 333k x 40 B x 86,400 = ~1.2 TB/day, ~36 TB for a 30-day window |
+| Storage per year | positions never reach disk | 0; history would cost 333k x 40 B x 86,400 = ~1.2 TB/day, 36 TB/month |
 
 Two things to say out loud. 333k writes/s comes from 10M nearly-idle clients, so it is a *cadence* problem you solve on the device. And the fan-out multiplier is **20x**: the pub/sub tier does twenty times the ingest tier's work, so every optimisation that matters lives there.
 

@@ -228,16 +228,14 @@ The probing question is "which nodes hold a key, and what moves when you add a n
 |---|---|---|---|---|
 | `hash(key) mod N` | O(1) | ~N/(N+1), almost everything | Good | Adding a node reshuffles the cluster |
 | Range partitioning | O(log ranges) | Only the split range | Needs rebalancing | Hot ranges; sequential keys land on one node |
-| Consistent-hash ring, one point per node | O(log N) | ~1/N | Poor: some nodes own 2x the average arc | Uneven load, and a removed node dumps its whole arc on one successor |
-| Ring with virtual nodes | O(log V) | ~1/N, spread across all nodes | Good with ~100 points per node | The chosen design |
+| Consistent-hash ring, one point per node | O(log N) | ~1/N | Poor: some own 2x the average arc | A removed node dumps its arc on one successor |
+| Ring with virtual nodes | O(log V) | ~1/N, spread over all nodes | Good with ~100 points per node | The chosen design |
 
 ![Hash ring](../../assets/img/figures/hash_ring.png){ width="800" }
 
-Every node takes ~100 pseudo-random tokens on a 2^32 ring and a key belongs to the first token clockwise from `hash(key)`, so load evens out statistically and a departing node's arcs are inherited by many successors instead of one neighbour. Weighted nodes are free: twice the disk, twice the tokens. The mechanics and the key-movement measurements are on the [partitioning page](../fundamentals/partitioning-and-consistent-hashing.md).
+Every node takes ~100 pseudo-random tokens on a 2^32 ring; a key belongs to the first token clockwise from `hash(key)`. Virtual nodes even out load and spread a departing node's arcs over many successors, and a box with twice the disk takes twice the tokens — mechanics and measurements on the [partitioning page](../fundamentals/partitioning-and-consistent-hashing.md).
 
-What is specific to this store is the **preference list**: the ring walk continued to the first N *distinct physical* nodes clockwise from the key. Skipping further tokens of a node already chosen is the detail candidates forget; without it, two of your three replicas sit on one machine. Production rings also skip nodes in the same rack, so a rack failure costs one replica, not three, and the list runs longer than N (say N + 2) so a coordinator knows which healthy nodes to fall back to.
-
-The hash must be stable across processes and languages because every client computes the same ring; a salted `hash()` is exactly the wrong tool. The cluster asks `HashRing` only two questions:
+Specific to this store is the **preference list**: the walk continued to the first N *distinct physical* nodes. Skipping further tokens of a node already chosen is the detail candidates forget — without it two of three replicas sit on one machine. Production rings also skip same-rack nodes and run to N + 2, so a coordinator always has healthy fallbacks. The ring hash must be stable across processes and languages, since every client computes it; a salted `hash()` is the wrong tool.
 
 ```python
 ring = HashRing(["A", "B", "C", "D", "E"], vnodes=64)
@@ -245,7 +243,7 @@ ring.get_node("cart:42")  # the owner: first token clockwise from hash(key)
 ring.preference_list("cart:42", replicas=3)  # the N distinct nodes holding the replicas
 ```
 
-Say the numbers: adding a sixth node to a five-node ring moves ~1/6 of the keys, all of them *onto* the new node; the naive modulo scheme would move ~5/6 of them.
+Say the numbers: a sixth node on a five-node ring moves ~1/6 of the keys, all *onto* the new node; `mod N` would move ~5/6.
 
 ## Deep dive: tunable N/W/R quorums
 
