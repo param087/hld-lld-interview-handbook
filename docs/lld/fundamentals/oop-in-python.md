@@ -167,7 +167,7 @@ row.extend([seat] * 9)   # the guard never runs: extend does not call append
 row[0] = other_seat      # nor does __setitem__
 ```
 
-**A booking owns its seats, a seat map holds them, and the audit wrapper composes rather than extends.**
+**A booking and a seat map both reference the same shared `Seat` values, and the audit wrapper composes rather than extends.**
 
 ```mermaid
 classDiagram
@@ -197,7 +197,7 @@ classDiagram
         +__getitem__(label: str) Seat
     }
     LabelMixin <|-- SeatMap : mixin
-    Booking "1" *-- "many" Seat
+    Booking "1" o-- "many" Seat
     SeatMap "1" o-- "many" Seat
     AuditedSeatMap o-- SeatMap : wraps
 ```

@@ -287,9 +287,9 @@ The probing question is "walk me through exactly what crosses the wire when a 1 
 
 The client chunks locally, hashes each chunk, and sends only the hashes to `plan`. The server answers with the subset it does not already hold — which, thanks to cross-user dedup, is often fewer blocks than the file changed, because someone else already uploaded those bytes. The client uploads exactly those and commits the full ordered hash list. For a 1 GB file at 4 MB blocks that is 256 hashes, about 8 KB of request, to avoid transferring a gigabyte.
 
-Two choices worth defending. **Where the bytes go**: small blocks through a block service (which can batch, compress and verify), large ones straight to object storage through a presigned URL so your servers never see the bytes. The rule of thumb is the same as for video upload — proxying bytes through a service is a bandwidth bill with no benefit once the payload is large. **Where the chunking happens**: on the client, always. Server-side chunking means uploading the whole file first, which defeats the point; client-side chunking also gives you resumability for free, because an interrupted upload resumes at the first missing hash.
+Two choices worth defending. **Where the bytes go**: small blocks through a block service (which can batch, compress and verify), large ones straight to object storage through a presigned URL. Proxying bytes through a service is a bandwidth bill with no benefit once the payload is large. **Where the chunking happens**: on the client, always. Server-side chunking means uploading the whole file first, which defeats the point, and client-side chunking gives resumability for free — an interrupted upload resumes at the first missing hash.
 
-Two failure cases the interviewer will reach for. A **crash between upload and commit** leaves orphaned blocks with no manifest referencing them; a sweeper collects blocks whose refcount has been zero for longer than a safety window. And **a malicious client** that commits a hash it never uploaded: the server checks that every hash in the commit exists and is readable before advancing the version, and verifies the block's bytes against its own hash on write, because a content-addressed store where the address is not verified is a store an attacker can poison.
+Two failure cases the interviewer will reach for. A **crash between upload and commit** leaves orphaned blocks; a sweeper collects blocks whose refcount has been zero for longer than a safety window. And **a client that commits a hash it never uploaded**: the server checks every hash in the commit exists and is readable before advancing the version, and verifies bytes against their hash on write, because a content-addressed store that does not verify addresses is one an attacker can poison.
 
 !!! tip "Interview tip"
     Lead with "the client chunks and hashes, then asks the server which hashes it needs." That single sentence contains delta sync, deduplication, resumability and the reason the API has a `plan` call — and it lands in fifteen seconds.
@@ -383,13 +383,13 @@ flowchart LR
 
 What breaks first, and what you do about it:
 
-- **A shared folder with 10,000 members.** One commit fans out 10,000 change events and every client immediately asks for the manifest. Batch and coalesce events per user, cache the manifest, and add jitter to client pull-back-off so the herd spreads.
-- **A hot metadata shard**, usually a huge team folder. Shard by folder root rather than by user for shared content, and cap the members per folder.
-- **The notification tier.** 10M long-lived connections is the stateful part of an otherwise stateless system: route by `user_id` so a user's devices land on one node, and make reconnection cheap because mobile networks drop connections constantly.
-- **A client stuck in a sync loop** (a file being rewritten by another program) burns bandwidth and version numbers. Debounce local changes, coalesce rapid edits into one commit, and rate-limit commits per file.
-- **Block-store failure.** Erasure coding survives node loss; a background scrubber re-reads and verifies checksums so bit rot is repaired before a read finds it.
-- **Permissions.** Revocation must be immediate, so permission checks are on the metadata path with a short-TTL cache and explicit invalidation, and block URLs are signed and short-lived — a leaked URL that works for a week is a revocation that never happened.
-- **Cost.** Deduplication and 30-day versions fight each other; the sweeper is what keeps that bounded, and cold blocks with one reference and no recent read are the tier-to-archive candidates.
+- **A shared folder with 10,000 members.** One commit fans out 10,000 change events and every client asks for the manifest at once. Coalesce events per user, cache the manifest, and jitter the clients' back-off so the herd spreads.
+- **A hot metadata shard**, usually a huge team folder. Shard shared content by folder root rather than by user, and cap the members per folder.
+- **The notification tier.** 10M long-lived connections is the stateful part of an otherwise stateless system: route by `user_id` so a user's devices land on one node, and make reconnection cheap, because mobile networks drop connections constantly.
+- **A client stuck in a sync loop** (a file another program keeps rewriting) burns bandwidth and version numbers. Debounce local changes, coalesce rapid edits, rate-limit commits per file.
+- **Block-store failure.** Erasure coding survives node loss; a scrubber re-reads and verifies checksums so bit rot is repaired before a read finds it.
+- **Permissions.** Revocation must be immediate, so checks sit on the metadata path with a short TTL and explicit invalidation, and block URLs are signed and short-lived — a leaked URL that works for a week is a revocation that never happened.
+- **Cost.** Deduplication and 30-day versions fight each other; the sweeper keeps that bounded, and cold single-reference blocks are the tier-to-archive candidates.
 
 ## Trade-offs summary
 

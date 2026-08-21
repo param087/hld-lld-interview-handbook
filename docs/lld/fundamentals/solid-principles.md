@@ -216,7 +216,7 @@ classDiagram
 --8<-- "code/fundamentals/solid.py:isp_after"
 ```
 
-A cash drawer cannot subscribe anyone to anything, and under the fat base class it had to say so in three stub methods. With small Protocols it implements `charge` and stops. The client shrinks too: `CheckoutService` declares `payments: Charges`, so nothing it depends on can be broken by a change to refunds. Python gives you this almost for free - duck typing means no implementation has to declare anything - but only if you *name the narrow type on the parameter*. Annotate it `CardGateway` and you have imported the whole fat surface anyway.
+A cash drawer cannot subscribe anyone to anything, and under the fat base class it had to say so in four stub methods. With small Protocols it implements `charge` and stops. The client shrinks too: `CheckoutService` declares `payments: Charges`, so nothing it depends on can be broken by a change to refunds. Python gives you this almost for free - duck typing means no implementation has to declare anything - but only if you *name the narrow type on the parameter*. Annotate it `CardGateway` and you have imported the whole fat surface anyway.
 
 **Say in the room:** "the checkout only ever charges, so the interface it depends on has one method."
 

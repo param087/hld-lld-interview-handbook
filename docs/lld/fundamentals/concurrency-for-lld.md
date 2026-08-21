@@ -14,7 +14,7 @@ Every artifact below lives in `code/fundamentals/concurrency.py`, tested in `cod
 
 ### The GIL protects the interpreter, not your invariants
 
-One thread executes Python bytecode at a time, and CPython switches threads every few milliseconds or whenever a thread blocks. That buys two things: the interpreter's own structures stay consistent, and single-bytecode operations such as `list.append` are effectively atomic. It buys nothing at the level you care about.
+One thread executes Python bytecode at a time, and CPython switches threads every few milliseconds (`sys.setswitchinterval`, 5 ms by default) or whenever a thread blocks. That buys two things: the interpreter's own structures stay consistent, and an operation that completes inside one C call without releasing the GIL — `list.append`, `dict.__setitem__` — is effectively atomic. It buys nothing at the level you care about.
 
 `self.value += 1` compiles to load, add, store. A thread can be preempted between the load and the store, and the value it eventually stores overwrites whatever another thread wrote in between:
 
@@ -80,6 +80,8 @@ Many readers share; a writer needs the place to itself. The right structure when
 ```
 
 The decision worth naming is *preference*. Here a reader waits while a writer is active **or queued**, so a stream of readers cannot starve a writer; readers starved by constant writes is the trade you accept. An interviewer who asks "what if reads never stop?" is checking that you chose rather than copied.
+
+Volunteer the second caveat before it is asked: this lock is **not reentrant**. A reader that takes the read lock and then calls a method that takes it again deadlocks the moment a writer queues in between, which is why `read_locked` wraps a leaf operation and never a callback.
 
 ### Thread-safe singletons and double-checked locking
 

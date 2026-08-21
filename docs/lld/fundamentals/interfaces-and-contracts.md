@@ -101,7 +101,7 @@ match service.reserve(command):
         offer_alternative(reason, available)
 ```
 
-`type ReservationResult = Reserved | Rejected` is the whole "result object" machinery Python needs; no `Either` library, and `match` gives exhaustiveness for free. Reach for exceptions when the failure must unwind several frames, and for results when the immediate caller has a decision to make.
+`type ReservationResult = Reserved | Rejected` is the whole "result object" machinery Python needs; no `Either` library. `match` does not check exhaustiveness at runtime - an unmatched value falls straight through - so close the block with `case _ as other: assert_never(other)`, and a type checker then fails the build the day a third outcome is added. Reach for exceptions when the failure must unwind several frames, and for results when the immediate caller has a decision to make.
 
 ### Preconditions, postconditions and invariants
 
@@ -143,7 +143,7 @@ Bound the page size in the contract (`1..100` here) so a caller cannot ask for t
 
 ### From domain method to REST resource
 
-The mapping is mechanical once the service interface is right, which is the point: design the domain call first, then expose it.
+The mapping is mechanical once the service interface is right, which is the point: design the domain call first, then expose it. (`release` is the third method this service grows in production; the delete mapping is worth seeing next to the other two.)
 
 | Service method | HTTP | Response |
 |---|---|---|

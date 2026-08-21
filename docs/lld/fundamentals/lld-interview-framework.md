@@ -81,7 +81,7 @@ Only then turn to the closing three. **Concurrency**: name which lock protects w
 
 ## Applying it in the interview
 
-**The 45-minute timebox.** The same six slots every problem page uses, so practising one trains you for all.
+**The 45-minute timebox.** Six slots, and the pacing table on every problem page is this shape with the middle split to suit the problem - a state-machine-heavy design spends more of minutes 10-24 on diagrams, a scoring problem more of 16-34 on code. The first and last slots never move.
 
 | Minutes | Step | Deliverable on the board |
 |---|---|---|

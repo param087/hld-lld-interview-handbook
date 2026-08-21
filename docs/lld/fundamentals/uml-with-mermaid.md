@@ -54,6 +54,7 @@ classDiagram
         -_by_id: Dict~str,T~
         +add(item: T) Self
         +find(item_id: str) T
+        +copy_for(barcode: str) BookCopy
     }
     class BookCopy {
         +barcode: str
@@ -112,6 +113,8 @@ The six relationships, strongest coupling first:
 | `A ..> B` | Dependency | A mentions B in a signature or body | A parameter or local |
 | `A <|.. B` | Realisation | B implements A | `Protocol` or `ABC` |
 
+Inheritance and realisation are the two that come in mirrored pairs: `A <|-- B` and `B --|> A` draw the same arrow, as do `A <|.. B` and `B ..|> A`. Pick one direction and keep it — this handbook writes the abstraction first, so `FinePolicy <|.. DailyFine`.
+
 Composition versus aggregation is the distinction interviewers probe. A `Book` composes its `BookCopy` objects - destroy the catalogue entry and the copies are meaningless. `LendingService` aggregates a `FinePolicy` - the policy is injected, shared, and outlives any one service. **Multiplicities** are quoted strings on either end: `Member "1" --> "0..5" Loan` says a member holds at most five loans, and that single annotation answers a requirement question before it is asked.
 
 ### Sequence diagrams: the order of calls
@@ -129,11 +132,11 @@ sequenceDiagram
     participant C as Catalogue
     participant F as FinePolicy
     participant N as Notifier
-    M->>D: borrow("9780132350884")
+    M->>D: borrow(barcode LIB-004821)
     activate D
     D->>L: borrow(member, barcode)
     activate L
-    L->>C: find(barcode)
+    L->>C: copy_for(barcode)
     C-->>L: BookCopy
     loop each unreturned loan
         L->>F: fine_for(days_late)
@@ -233,7 +236,7 @@ The same syntax draws the architecture diagrams in the HLD half of the handbook;
 
 ### Entity-relationship diagrams
 
-An `erDiagram` is the persisted view: what has a table, what has a key, and how many of each. Cardinality is read left to right - `||` exactly one, `o|` zero or one, `}o` zero or many, `}|` one or many.
+An `erDiagram` is the persisted view: what has a table, what has a key, and how many of each. Cardinality markers come in mirrored pairs, and each one sits next to the entity it describes: `||` on either side is exactly one, `|o` / `o|` is zero or one, `}o` / `o{` is zero or many, and `}|` / `|{` is one or many. The crow's foot always points at the *many* end, so `MEMBER ||--o{ LOAN` reads "one member, zero or many loans".
 
 **What the lending system stores, and the keys that join it.**
 
@@ -282,6 +285,7 @@ The relationship label after the colon is **mandatory** - omit it and the diagra
 - Soft limit 25 nodes, hard limit 30. Past that, split the diagram - two readable pictures always beat one dense one.
 - Never `%%{init ...}%%`, `style`, `classDef`, `linkStyle` or `click`: they hard-code colours that vanish in the dark theme. `%%` comments only on their own line.
 - ASCII identifiers, no tabs, no unicode arrows, and no `"` inside a quoted label - rephrase instead.
+- Prefix flowchart node ids by kind (`svc_order`, `db_users`, `chk_limit`) so no id begins with `o` or `x` immediately after `---`: Mermaid reads `a---oB` as a circle edge and `a---xB` as a cross edge, and your node vanishes.
 - Class names in a diagram must be identical to the class names in the code the page embeds.
 - Validate before you commit: `node scripts/validate_mermaid.mjs --files docs/lld/fundamentals/uml-with-mermaid.md`.
 
