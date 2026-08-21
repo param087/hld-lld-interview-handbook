@@ -251,20 +251,19 @@ The probing question is "what do W and R buy me, and what does W + R > N actuall
 
 | Setting | Write latency | Read latency | What you get | Typical use |
 |---|---|---|---|---|
-| N=3, W=1, R=1 | Fastest | Fastest | Stale reads likely; one replica holds the only copy until replication catches up | Caches, counters you can lose |
-| N=3, W=2, R=2 | One round trip, second-fastest ack | Same | Every read quorum overlaps every write quorum: the latest acknowledged write is in the answer set | The default |
+| N=3, W=1, R=1 | Fastest | Fastest | Stale reads likely; one replica holds the only copy | Caches, counters you can lose |
+| N=3, W=2, R=2 | One round trip, second-fastest ack | Same | Read and write quorums overlap: the latest acknowledged write is in the answer set | The default |
 | N=3, W=3, R=1 | Slowest, fails if any replica is down | Fastest | Read-heavy keys; writes stall on one slow replica | Configuration data |
 | N=3, W=1, R=3 | Fastest | Slowest, fails if any replica is down | Write-heavy keys | Event ingestion |
 
-The overlap argument is the whole point: with W + R > N the write quorum and the read quorum share at least one node, so the newest version is among the R answers and the clock comparison picks it out. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md).
+The overlap argument is the whole point: with W + R > N the write quorum and the read quorum share a node, so the newest version is among the R answers and the clock comparison picks it out. With W + R <= N a reader can contact only replicas that missed the write — the stale-read demo on the [replication page](../fundamentals/replication.md), whose `quorum_overlaps` check the module exposes as `KVCluster.overlapping`.
 
-Three nuances worth volunteering:
+Four nuances worth volunteering:
 
-- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, which is why a compaction pause rarely shows up in the p99 — at the cost of N replica operations per request, the number that sized the cluster.
-- **W + R > N is not linearizability.** Two clients can write concurrently and both succeed: the store records both rather than ordering them (deep dive 3). A sloppy quorum (deep dive 4) can also acknowledge on a stand-in that a later read quorum never contacts, so under failure the guarantee degrades to "eventually".
-- **Durability is W, not N.** W=2 means two WALs have the write when the client hears "ok"; the third copy arrives asynchronously, via the late acknowledgement or a hint.
-
-Latency budget for the default: a write is one fsync-ed WAL append plus one same-datacenter round trip (~500 µs) for the second acknowledgement, well inside 20 ms; a read adds ~16 µs of SSD per SSTable consulted. The p99 goes on queueing and on the slowest of two replicas, not on disk. `KVCluster.overlapping` exposes the `quorum_overlaps` check so a test can assert that a W=1, R=1 cluster is knowingly non-overlapping.
+- **The coordinator sends to all N and waits for W (or R).** Tail latency becomes a race the slowest replica loses, at the cost of N replica operations per request — the number that sized the cluster.
+- **W + R > N is not linearizability.** Concurrent writes both succeed and are both recorded rather than ordered (deep dive 3), and a sloppy quorum can acknowledge on a stand-in that a later read quorum never contacts (deep dive 4).
+- **Durability is W, not N.** When the client hears "ok" two WALs hold the write; the third copy arrives via the late acknowledgement or a hint.
+- **The budget is one round trip.** A write is an fsync-ed WAL append plus one same-datacenter hop (~500 µs) for the second acknowledgement; a read adds ~16 µs of SSD per SSTable consulted. Both sit far inside the 10/20 ms p99, which is spent queueing behind the slowest of two replicas.
 
 ## Deep dive: versioning with vector clocks and read repair
 
@@ -272,19 +271,19 @@ The probing question is "two clients update the same cart while a node is down; 
 
 | Strategy | Concurrent writes | Clock skew | Metadata per version | Burden |
 |---|---|---|---|---|
-| Last-writer-wins (wall-clock timestamp) | One silently lost | A fast clock wins every conflict for hours | 8 B | None on the application, hidden data loss |
+| Last-writer-wins (wall-clock timestamp) | One silently lost | A fast clock wins every conflict for hours | 8 B | Hidden data loss, none on the application |
 | Vector clocks (per-coordinator counters) | Both kept as siblings | Immune | A few (node, counter) pairs | Application must merge siblings |
 | CRDTs (merge is a property of the type) | Merged deterministically | Immune | Type-dependent | Only for data with a natural merge (sets, counters) |
 
-Choose vector clocks where a lost update matters (carts, profiles) and offer last-writer-wins per keyspace where it does not (metrics, session heartbeats). Cassandra chose LWW for simplicity; Dynamo and Riak chose clocks. Name the trade rather than picking a side by reflex.
+Choose vector clocks where a lost update matters (carts, profiles) and last-writer-wins per keyspace where it does not (metrics, heartbeats). Cassandra chose LWW, Dynamo and Riak chose clocks; name the trade rather than picking a side by reflex.
 
-How the clocks work: every version is stamped `{coordinator: counter, ...}`, and a coordinator stamps a write by incrementing its own counter in the context the client sent. If clock A has every counter of B at least as high, A *descends from* B and B is dropped; if neither descends from the other, the writes were concurrent and both survive as siblings. A read returns all siblings plus their merged clock as the context, and a write carrying that context descends from every sibling and collapses them — in the demo `{A:1, C:1}` and `{C:1, D:1}` become one version once a client writes back with `{A:1, C:1, D:1}`.
+Every version is stamped `{coordinator: counter, ...}`, incremented on the context the client sent. If clock A has every counter of B at least as high, A *descends from* B and B is dropped; otherwise the writes were concurrent and both survive as siblings. A read returns every sibling plus their merged clock, and the next write carrying that context collapses them — in the demo `{A:1, C:1}` and `{C:1, D:1}` become one version under `{A:1, C:1, D:1}`.
 
 ```python title="code/hld/kv_cluster.py — clocks, versions and reconciliation"
 --8<-- "code/hld/kv_cluster.py:vector_clock"
 ```
 
-**Read repair** is the cheap half of anti-entropy: when one of the R replicas returns a dominated version or nothing, the coordinator writes the winners back to it after answering the client. Hot keys converge on their own; only cold keys need the Merkle sweep of deep dive 4. Two details to mention: clocks are truncated (Dynamo keeps the ten newest entries, bounding metadata at the price of false siblings), and a coordinator bumps its counter past any it already holds for the key, so a blind write is never dominated by a version it stores.
+**Read repair** is the cheap half of anti-entropy: when one of the R replicas returns a dominated version or nothing, the coordinator writes the winners back after answering the client, so hot keys converge on their own and only cold keys need the Merkle sweep of deep dive 4. Mention that clocks are truncated — Dynamo keeps the ten newest entries, bounding metadata at the price of false siblings.
 
 ## Deep dive: failure handling with gossip, sloppy quorums, hinted handoff and anti-entropy
 
