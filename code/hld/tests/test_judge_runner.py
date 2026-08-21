@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from common import FakeClock, NotFoundError, ValidationError
+from common import ConflictError, FakeClock, NotFoundError, ValidationError
 from hld.judge_runner import (
     CaseResult,
     Judge,
@@ -80,7 +80,8 @@ def test_an_expired_lease_returns_the_submission_to_the_queue() -> None:
     clock = FakeClock(start=1_000.0)
     queue = SubmissionQueue(clock=clock, lease_seconds=30.0, max_attempts=2)
     queue.submit("s1")
-    assert queue.claim() == "s1"
+    lease = queue.claim()
+    assert lease is not None and lease.submission_id == "s1"
     assert queue.depth() == (0, 1)
     clock.advance(10)
     assert queue.reclaim_expired() == []  # the lease is still valid
@@ -94,11 +95,46 @@ def test_a_submission_that_kills_every_worker_becomes_a_dead_letter() -> None:
     queue = SubmissionQueue(clock=clock, lease_seconds=10.0, max_attempts=2)
     queue.submit("poison")
     for _ in range(2):
-        assert queue.claim() == "poison"
+        lease = queue.claim()
+        assert lease is not None and lease.submission_id == "poison"
         clock.advance(11)
         queue.reclaim_expired()
     assert queue.claim() is None
     assert queue.dead_letters() == ["poison"]
+
+
+def test_a_reclaimed_worker_cannot_complete_the_lease_that_replaced_it() -> None:
+    """The fencing token: worker A's late completion must not pop worker B's live lease."""
+    clock = FakeClock(start=1_000.0)
+    queue = SubmissionQueue(clock=clock, lease_seconds=30.0, max_attempts=3)
+    queue.submit("s1")
+    stale = queue.claim()
+    assert stale is not None
+    clock.advance(31)  # worker A is paused past its lease; the reaper hands s1 back
+    assert queue.reclaim_expired() == ["s1"]
+    live = queue.claim()
+    assert live is not None
+    assert live.submission_id == stale.submission_id
+    assert live.token != stale.token  # every re-claim mints a new token
+    assert (stale.attempt, live.attempt) == (1, 2)
+
+    with pytest.raises(ConflictError, match="no longer holds the lease"):
+        queue.complete(stale.submission_id, stale.token)  # worker A wakes up
+    assert queue.depth() == (0, 1)  # worker B still holds its lease
+
+    queue.complete(live.submission_id, live.token)  # the current holder is unaffected
+    assert queue.depth() == (0, 0)
+
+
+def test_a_lease_that_ran_out_cannot_complete_even_before_the_reaper_runs() -> None:
+    clock = FakeClock(start=1_000.0)
+    queue = SubmissionQueue(clock=clock, lease_seconds=30.0)
+    queue.submit("s1")
+    lease = queue.claim()
+    assert lease is not None
+    clock.advance(31)
+    with pytest.raises(ConflictError, match="no longer holds the lease"):
+        queue.complete(lease.submission_id, lease.token)
 
 
 def test_queue_validation_errors() -> None:
@@ -107,7 +143,7 @@ def test_queue_validation_errors() -> None:
     with pytest.raises(ValidationError):
         queue.submit("s1")
     with pytest.raises(NotFoundError):
-        queue.complete("s1")  # claimed by nobody
+        queue.complete("s1", "lt-1")  # claimed by nobody
     with pytest.raises(ValidationError):
         Judge().judge(Program(), [], LIMITS)
 
@@ -117,7 +153,9 @@ def test_concurrent_workers_claim_each_submission_exactly_once() -> None:
     for i in range(400):
         queue.submit(f"s{i}")
     with ThreadPoolExecutor(max_workers=16) as pool:
-        claimed = [c for c in pool.map(lambda _: queue.claim(), range(500)) if c is not None]
+        leases = [c for c in pool.map(lambda _: queue.claim(), range(500)) if c is not None]
+    claimed = [lease.submission_id for lease in leases]
     assert sorted(claimed) == sorted(f"s{i}" for i in range(400))
     assert len(set(claimed)) == 400  # no submission judged twice
+    assert len({lease.token for lease in leases}) == 400  # and no token handed out twice
     assert queue.depth() == (0, 400)

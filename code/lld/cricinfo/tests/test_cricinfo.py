@@ -169,6 +169,37 @@ def test_undo_removes_the_last_delivery_and_its_wicket(clock: FakeClock) -> None
         service.undo_last_ball()
 
 
+def test_undoing_the_ball_that_ended_an_innings_reopens_it(clock: FakeClock) -> None:
+    """The ball a scorer most often needs back is the one that closed the innings."""
+    spec = replace(FormatFactory.create(MatchFormat.T20), max_overs=1)
+    service = make_service(clock, spec)
+    for _ in range(6):
+        service.record_ball("rohit", "starc", 1)
+    assert service.snapshot.match.status is MatchStatus.INNINGS_BREAK
+    assert service.snapshot.match.innings[0].closed is True
+
+    service.undo_last_ball()
+    assert service.snapshot.match.innings[0].closed is False
+    assert service.snapshot.match.status is MatchStatus.LIVE  # status follows the replay
+    service.record_ball("rohit", "starc", 1)  # and the innings accepts a ball again
+    assert service.snapshot.match.status is MatchStatus.INNINGS_BREAK
+
+
+def test_a_correction_that_un_ends_an_innings_moves_the_status_back(clock: FakeClock) -> None:
+    """A wide is not a legal ball, so correcting the last delivery reopens the over."""
+    spec = replace(FormatFactory.create(MatchFormat.T20), max_overs=1)
+    service = make_service(clock, spec)
+    for _ in range(6):
+        service.record_ball("rohit", "starc", 1)
+    assert service.snapshot.match.status is MatchStatus.INNINGS_BREAK
+
+    last = service.deliveries(1)[-1]
+    service.correct_ball(1, 5, replace(last, ball_type=BallType.WIDE))
+
+    assert service.snapshot.match.innings[0].closed is False
+    assert service.snapshot.match.status is MatchStatus.LIVE  # not stuck in a break
+
+
 # --8<-- [start:concurrency]
 def test_readers_never_see_a_torn_snapshot_while_the_scorer_writes(clock: FakeClock) -> None:
     """Four scorers, four readers, one match: every snapshot a reader sees is whole."""

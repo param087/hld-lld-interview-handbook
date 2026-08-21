@@ -269,7 +269,11 @@ class DeliveryService:
         """Caller holds the lock. Frees the courier and optionally records the pass."""
         offer.status = status
         partner = self._partners.get(offer.partner_id)
-        if partner is not None and partner.status is not PartnerStatus.OFFLINE:
+        # Free the courier only if they are still holding *this* order. Retiring a
+        # stale offer must never take a courier off the delivery they have since
+        # accepted -- the classic "release a resource someone else now owns" bug.
+        still_held = partner is not None and partner.current_order_id == offer.order_id
+        if still_held and partner is not None and partner.status is not PartnerStatus.OFFLINE:
             partner.status = PartnerStatus.IDLE
             partner.current_order_id = None
         if remember:

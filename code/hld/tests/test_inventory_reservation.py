@@ -52,6 +52,39 @@ def test_reserve_is_idempotent_per_order(inventory: InventoryService) -> None:
     second = inventory.reserve("ord-1", {"poster": 4})
     assert first is second
     assert inventory.available("poster") == 6  # reserved once, not twice
+    inventory.commit(first.reservation_id)
+    assert inventory.reserve("ord-1", {"poster": 4}) is first  # a sale is not re-reserved either
+    assert inventory.available("poster") == 6
+
+
+def test_reserve_after_a_release_gives_the_retried_saga_a_fresh_hold(
+    inventory: InventoryService,
+) -> None:
+    """A saga that compensated and is retried must not be handed the dead hold it released."""
+    first = inventory.reserve("ord-1", {"poster": 3})
+    inventory.release(first.reservation_id)  # the compensation ran
+    assert first.state is ReservationState.RELEASED
+    assert inventory.available("poster") == 10  # the units went back on the shelf
+
+    second = inventory.reserve("ord-1", {"poster": 3})  # the same order, retried
+    assert second.reservation_id != first.reservation_id
+    assert second.state is ReservationState.HELD
+    assert inventory.available("poster") == 7  # held once more, not twice
+    assert inventory.commit(second.reservation_id).state is ReservationState.COMMITTED
+
+
+def test_reserve_after_an_expiry_on_the_same_order_gives_a_fresh_hold(
+    inventory: InventoryService, clock: FakeClock
+) -> None:
+    """The sweep runs before the idempotency check, so a lapsed hold is never handed back."""
+    first = inventory.reserve("ord-1", {"mug": 2})
+    clock.advance(901)  # the TTL lapses and no sweeper has run yet
+    second = inventory.reserve("ord-1", {"mug": 2})
+    assert first.state is ReservationState.EXPIRED
+    assert second.reservation_id != first.reservation_id
+    assert second.state is ReservationState.HELD
+    assert inventory.snapshot()["mug"] == (0, 2)  # the units moved once, not twice
+    assert inventory.commit(second.reservation_id).state is ReservationState.COMMITTED
 
 
 def test_expected_versions_make_reserve_a_compare_and_set(inventory: InventoryService) -> None:
@@ -130,6 +163,21 @@ def test_checkout_saga_completes_and_the_outbox_carries_every_event(
     ]
     assert inventory.available("poster") == 7
     assert inventory.snapshot()["poster"] == (7, 0)
+
+
+def test_the_reserve_event_carries_the_stock_versions_the_hold_was_taken_against(
+    inventory: InventoryService,
+) -> None:
+    """``Reservation.versions`` is audit-only: published on the event, never re-read by commit."""
+    outbox = Outbox()
+    saga = build_checkout_saga(
+        inventory, outbox, lambda order_id, amount: f"pay-{order_id}", lambda ref: None
+    )
+    at_reserve = inventory.versions("poster")["poster"] + 1  # reserve bumps the row once
+    saga.start("ord-1", {"order_id": "ord-1", "lines": {"poster": 2}, "amount": Money.of("19.98")})
+    reserved = next(e for e in outbox.relay() if e.topic == "inventory-reserved")
+    assert reserved.payload["versions"] == {"poster": at_reserve}
+    assert inventory.versions("poster")["poster"] > at_reserve  # commit moved it on again
 
 
 def test_checkout_saga_compensates_when_the_card_is_declined(inventory: InventoryService) -> None:

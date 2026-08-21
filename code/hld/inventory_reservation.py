@@ -5,7 +5,9 @@ What the module demonstrates, in the order an interviewer asks about it:
 
 * ``InventoryService.reserve`` takes every line of an order or none, moving units from
   ``on_hand`` into ``reserved`` and bumping each SKU's ``version``. It is idempotent per
-  ``order_id``, so a retried checkout never reserves twice.
+  ``order_id`` while the hold is **live** -- held or already committed -- so a retried checkout
+  never reserves twice, while a checkout retried after a compensation gets a fresh hold rather
+  than the dead one it released.
 * ``commit`` turns a live reservation into a sale; ``release`` and ``expire`` give the units
   back, and an expired reservation is reclaimed lazily by the next reserve as well as by the
   sweeper, so stuck stock is impossible.
@@ -72,8 +74,17 @@ class Reservation:
     order_id: str
     lines: dict[str, int]  # sku -> quantity
     expires_at: float
-    versions: dict[str, int] = field(default_factory=dict)  # sku version after the reserve
+    # Audit-only: the stock versions this hold was taken against, carried on the reserve event.
+    # Deliberately *not* re-checked by commit -- see InventoryService.commit for why a hold
+    # needs no version check, unlike a seat hold in hld.seat_hold, whose seats can be taken
+    # over the moment its TTL lapses.
+    versions: dict[str, int] = field(default_factory=dict)
     state: ReservationState = ReservationState.HELD
+
+    @property
+    def is_live(self) -> bool:
+        """Held, or the sale it already became: the two states a retried checkout may reuse."""
+        return self.state in (ReservationState.HELD, ReservationState.COMMITTED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,16 +153,23 @@ class InventoryService:
 
     # -- write path ---------------------------------------------------------------------------
     def reserve(self, order_id: str, lines: Mapping[str, int], expected_versions: Mapping[str, int] | None = None) -> Reservation:
-        """Reserve every line or none; twice for one order returns the same reservation. Passing
-        ``expected_versions`` from a prior :meth:`versions` read makes it a compare-and-set."""
+        """Reserve every line or none; twice for one order returns the same **live** reservation.
+        Passing ``expected_versions`` from a prior :meth:`versions` read makes it a compare-and-set.
+
+        Order matters here. The sweep runs *first*, so a hold whose TTL lapsed but which no
+        sweeper has touched yet is expired before it can be mistaken for a live one. Only then
+        is the idempotency key consulted, and only a held or committed reservation counts as a
+        retry: a saga that compensated left its reservation ``RELEASED``, and handing that dead
+        hold back to a retried checkout would give the caller units it no longer owns and a
+        :meth:`commit` that can only fail."""
         if not lines or any(qty <= 0 for qty in lines.values()):
             raise ValidationError("every line needs a positive quantity")
         now = self._clock.now()
         with self._lock:
+            self._reclaim(now)  # sweep before the idempotency check, never after
             existing = self._by_order.get(order_id)
-            if existing is not None and self._reservations[existing].state is not ReservationState.EXPIRED:
+            if existing is not None and self._reservations[existing].is_live:
                 return self._reservations[existing]  # the retried checkout
-            self._reclaim(now)
             unknown = [sku for sku in lines if sku not in self._stock]
             if unknown:
                 raise NotFoundError(f"unknown skus: {sorted(unknown)}")
@@ -174,7 +192,8 @@ class InventoryService:
         """Turn a hold into a sale. No version check is needed and that is the point: the units
         are already out of ``available``, so nobody else could have taken them. Only the
         reservation's own state can stop a commit -- expired or released means the units went
-        back on the shelf and may already be sold to somebody else."""
+        back on the shelf and may already be sold to somebody else. ``reservation.versions`` is
+        an audit record published on the reserve event, never a precondition read here."""
         with self._lock:
             reservation = self._get(reservation_id)
             if reservation.state is ReservationState.COMMITTED:
@@ -310,7 +329,12 @@ def build_checkout_saga(
             raise StepFailed(str(exc)) from exc
         ctx["reservation_id"] = reservation.reservation_id
         ctx["state"] = OrderState.RESERVED
-        outbox.append("inventory-reserved", order_id=ctx["order_id"], lines=dict(ctx["lines"]))
+        outbox.append(
+            "inventory-reserved",
+            order_id=ctx["order_id"],
+            lines=dict(ctx["lines"]),
+            versions=dict(reservation.versions),  # the audit trail: which stock rows this took
+        )
 
     def release_inventory(ctx: SagaContext) -> None:
         if "reservation_id" in ctx:
@@ -378,7 +402,9 @@ def main() -> None:
         inv.commit(first.reservation_id)
     except InvalidStateError as exc:
         print(f"ord-1 pays late, commit           -> rejected: {exc}: refund and re-offer")
-    inv.release(other.reservation_id)
+    inv.release(other.reservation_id)  # a saga compensation gives the units back
+    retried = inv.reserve("ord-3", {"tshirt": 2, "mug": 1})
+    print(f"saga compensated ord-3, retried   -> {retried.reservation_id}, a fresh hold, not the released {other.reservation_id}")
 
     outbox = Outbox()
 

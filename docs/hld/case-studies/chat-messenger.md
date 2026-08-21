@@ -306,7 +306,7 @@ Choose the **per-conversation `seq`** assigned by a single owner: the chat-servi
 --8<-- "code/hld/chat_router.py:service"
 ```
 
-Note where the lock sits: sequencing and storing happen under it; routing (registry lookups, publishes) happens outside it, so one slow socket never delays the next message's `seq`.
+Note where the lock sits: sequencing and storing happen under it, routing outside it, so one slow socket never delays the next message's `seq`.
 
 ## Deep dive: delivery states, offline queue and push
 
@@ -349,7 +349,7 @@ ws-2 gone: bob's session dropped -> ('bob', 'trio:3') | bob online: False
 
 ## Deep dive: group fan-out and presence
 
-"What changes for a group of 500?" The message is still written **once**; the fan-out happens at delivery, and the unit of work is the *server*, not the socket.
+"What changes for a group of 500?" The message is still written **once**; fan-out happens at delivery, and the unit of work is the *server*, not the socket.
 
 **Group send: one durable write, one registry batch, one publish per server that holds members.**
 

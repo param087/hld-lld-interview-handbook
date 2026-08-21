@@ -383,7 +383,7 @@ That is a copy-on-write publish, and it beats a reader-writer lock here for a co
 
 **Correcting a mis-entered ball.** `correct_ball` replaces one event in place, keeping its id as the audit trail, then replays. Because over and ball positions are derived, a correction that changes legality re-cuts every later over. The test asserts exactly that: `[7, 1]` deliveries per over becomes `[6, 2]`. `undo_last_ball` is the same mechanism with a `pop`.
 
-**Innings and match transitions.** After every write the service replays, asks the rules whether the innings is complete, and compares the total against the target. Passing a target ends the match mid-over; running out of wickets or overs ends the innings and moves to `INNINGS_BREAK`. `start_innings` demands `INNINGS_BREAK` for any innings after the first, so you cannot open a second innings while the first is live.
+**Innings and match transitions.** After every write the service replays, asks the rules whether the innings is complete, and compares the total against the target. Passing a target ends the match mid-over; running out of wickets or overs ends the innings and moves to `INNINGS_BREAK`. The status is derived from the replay in *both* directions, which is the part candidates skip: undoing or correcting the ball that ended an innings reopens it, and a status that only ever moved forward would leave the match in a break over an innings the scorecard says is live. `undo_last_ball` therefore works during a break, because the ball a scorer most often needs back is exactly the one that closed the innings. `start_innings` demands `INNINGS_BREAK` for any innings after the first, so you cannot open a second innings while the first is live.
 
 **Other edge cases handled**: wides and no-balls not advancing the over, byes and leg byes not charged to the bowler, a no-ball counting as a ball faced while a wide does not, run-outs not credited to the bowler, a batter who only appears as a run-out victim still getting a scorecard row, maidens counted only on complete overs with no charged runs, recording a ball for a player who is not in the squad, and recording after the match is over.
 
@@ -404,7 +404,7 @@ That is a copy-on-write publish, and it beats a reader-writer lock here for a co
 
 ## Tests
 
-`tests/test_cricinfo.py` has 14 cases. The correction test is the one to walk through, because it asserts the over boundaries moved rather than just the total:
+`tests/test_cricinfo.py` has 16 cases. The correction test is the one to walk through, because it asserts the over boundaries moved rather than just the total:
 
 ```python title="code/lld/cricinfo/tests/test_cricinfo.py — the correction"
 --8<-- "code/lld/cricinfo/tests/test_cricinfo.py:correction"
@@ -416,7 +416,7 @@ The concurrency test runs scorers and readers through the same pool and checks t
 --8<-- "code/lld/cricinfo/tests/test_cricinfo.py:concurrency"
 ```
 
-The rest cover: an over scored ball by ball with exact batting and bowling figures; all five ball types via `parametrize`, asserting who gets the runs and whether the over advanced; validation (unknown striker, a bowler from the wrong side, negative runs, opening a second innings too early); the full status walk from `SCHEDULED` to `COMPLETED` with a chased target; undo removing a wicket and its alert; `HundredRules` cutting overs at five balls; and both points rules. Run them with `uv run pytest code/lld/cricinfo -q`.
+The rest cover: an over scored ball by ball with exact batting and bowling figures; all five ball types via `parametrize`, asserting who gets the runs and whether the over advanced; validation (unknown striker, a bowler from the wrong side, negative runs, opening a second innings too early); the full status walk from `SCHEDULED` to `COMPLETED` with a chased target; undo removing a wicket and its alert; undoing the ball that closed an innings reopening it, and a correction that turns the last legal ball into a wide doing the same; `HundredRules` cutting overs at five balls; and both points rules. Run them with `uv run pytest code/lld/cricinfo -q`.
 
 ## 45-minute pacing
 

@@ -389,7 +389,7 @@ PAY-INV-2: 1098.60 USD by card; 12-SU-01 goes straight to the workshop
 
 ## Concurrency and edge cases
 
-**Which lock protects what.** There are exactly two, and they are never nested:
+**Which lock protects what.** There are exactly two kinds, and the two kinds are never nested with each other:
 
 1. `Branch.lock` (an `RLock`) guards that branch's fleet pool, every vehicle calendar in it, and the ledger of open holds. It is the serialisation point of the design. Coarser than one lock per car — because "is any SUV free that week?" would otherwise be a scan that takes N locks in an order you have to prove is safe — and far finer than one lock for the company, so Lisbon and Porto never contend. An uncontended lock costs about 17 ns; a branch that handles even 100 bookings a minute is nowhere near contention, so buying simplicity with a slightly coarse lock is the right trade.
 2. `RentalSystem._lock` guards the reservation registry and every status transition. `_claim(id, expected, target)` checks and flips atomically, so two desks handed the same reservation cannot both pick the car up: the loser gets `ReservationStateError`.
@@ -401,11 +401,11 @@ The ordering rule is stated once and obeyed everywhere: **claim under the regist
 ```python
 fleet    = cars of that class that are not retired
 blocked  = those whose calendar overlaps the range   # maintenance + already-pinned rentals
-held     = RESERVED rows for that class overlapping the range
+held     = open ledger rows for that class overlapping the range
 available = len(fleet) - blocked - held
 ```
 
-The subtlety worth saying out loud: a reservation is counted in exactly one of the two terms, never both. While it is `RESERVED` it is a counted hold with no plate; the instant it becomes `PICKED_UP` it acquires a calendar block and is dropped from the ledger. `reserve` does a cheap unlocked `available()` call first as a *hint*, then calls `hold`, which recomputes under the lock and is the only thing that can say yes.
+The subtlety worth saying out loud: a reservation is counted in exactly one of the two terms — never both, and never *neither*. Ledger membership is the hold, not the status: `pick_up` flips the status before `check_out` pins a plate, so counting by status frees the car for that window. `reserve` does a cheap unlocked `available()` call first as a *hint*, then calls `hold`, which recomputes under the lock and is the only thing that can say yes.
 
 **Two branch locks at once.** A one-way return has to remove a car from one fleet and add it to another. `transfer` sorts the two branches by id and takes the locks in that order, so two one-way returns running in opposite directions can never deadlock — the classic fixed-order rule, applied to the only place in this design that needs two locks.
 
@@ -430,7 +430,7 @@ The subtlety worth saying out loud: a reservation is counted in exactly one of t
 
 ## Tests
 
-`tests/test_car_rental.py` has 20 cases. Two are worth walking through out loud. The concurrency test races 24 threads at a branch with three SUVs and asserts exactly three winners — the invariant, not the mechanism:
+`tests/test_car_rental.py` has 21 cases. Two are worth walking through out loud. The concurrency test races 24 threads at a branch with three SUVs and asserts exactly three winners — the invariant, not the mechanism:
 
 ```python title="code/lld/car_rental/tests/test_car_rental.py — no oversell under contention"
 --8<-- "code/lld/car_rental/tests/test_car_rental.py:concurrency"

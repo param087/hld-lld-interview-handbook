@@ -460,7 +460,7 @@ p3 rating is now 4.84
 
 ## Tests
 
-`tests/test_food_delivery.py` has 19 cases. The two concurrency tests are the ones to walk through. The first races eight dispatches against three couriers and asserts three distinct leases — and, just as importantly, that a lease is *not* an assignment:
+`tests/test_food_delivery.py` has 20 cases. The two concurrency tests are the ones to walk through. The first races eight dispatches against three couriers and asserts three distinct leases — and, just as importantly, that a lease is *not* an assignment:
 
 ```python title="code/lld/food_delivery/tests/test_food_delivery.py — no double assignment"
 --8<-- "code/lld/food_delivery/tests/test_food_delivery.py:double_assign"
@@ -472,7 +472,7 @@ The second interleaves twenty accepts with twenty cancels and asserts the invari
 --8<-- "code/lld/food_delivery/tests/test_food_delivery.py:cancel_race"
 ```
 
-The rest cover: price snapshotting and coupon application, with the menu changed afterwards to prove the snapshot holds; sold-out items, empty carts and closed kitchens; the transition table through a six-case `parametrize` of legal and illegal moves; the lease making a second order undispatchable and `dispatch` being idempotent; the 30-second timeout cascading to a courier who has not passed, and the stale offer being unusable; declining until the cascade is exhausted; authorize-then-capture on the happy path and authorize-then-void on rejection; the three assignment strategies each picking a different courier from the same three candidates; and the bus isolating a handler that throws. Run them with `uv run pytest code/lld/food_delivery -q`.
+The rest cover: price snapshotting and coupon application, with the menu changed afterwards to prove the snapshot holds; sold-out items, empty carts and closed kitchens; the transition table through a six-case `parametrize` of legal and illegal moves; the lease making a second order undispatchable and `dispatch` being idempotent; the 30-second timeout cascading to a courier who has not passed, and the stale offer being unusable; retiring a stale offer leaving a courier who has since accepted another order alone, because freeing a resource someone else now owns is the failure this design exists to avoid; declining until the cascade is exhausted; authorize-then-capture on the happy path and authorize-then-void on rejection; the three assignment strategies each picking a different courier from the same three candidates; and the bus isolating a handler that throws. Run them with `uv run pytest code/lld/food_delivery -q`.
 
 ## 45-minute pacing
 

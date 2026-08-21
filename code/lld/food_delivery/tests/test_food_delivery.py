@@ -192,6 +192,25 @@ def test_cancel_racing_accept_never_strands_a_courier(clock: FakeClock) -> None:
 # --8<-- [end:cancel_race]
 
 
+def test_retiring_a_stale_offer_never_steals_a_busy_courier(clock: FakeClock) -> None:
+    """The courier declined order A, then accepted B. Order A must not free them."""
+    service = build(clock, couriers=1)
+    dispatch = service.delivery
+
+    stale = dispatch.offer("order-A", KITCHEN)
+    dispatch.decline(stale.id, "p1")
+    fresh = dispatch.offer("order-B", KITCHEN)
+    dispatch.accept(fresh.id, "p1")
+    assert dispatch.partner("p1").status is PartnerStatus.DELIVERING
+
+    dispatch.release(stale)  # retire the offer the courier already walked away from
+    assert dispatch.partner("p1").status is PartnerStatus.DELIVERING
+    assert dispatch.partner("p1").current_order_id == "order-B"
+
+    dispatch.void_order("order-A")  # and the bulk path is guarded the same way
+    assert dispatch.partner("p1").status is PartnerStatus.DELIVERING
+
+
 def test_offer_timeout_cascades_to_the_next_courier(clock: FakeClock) -> None:
     service = build(clock, couriers=2, offer_timeout=30.0)
     order = service.place_order(full_cart(), HOME, PaymentMethod.CARD)

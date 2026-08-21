@@ -121,6 +121,24 @@ def test_concurrent_reservations_never_oversell_a_branch(clock: FakeClock) -> No
 # --8<-- [end:concurrency]
 
 
+def test_a_pick_up_in_flight_still_counts_against_the_fleet(clock: FakeClock) -> None:
+    # pick_up flips the status under the registry lock and only then pins a plate under
+    # the branch lock. If availability counted holds by status rather than by ledger
+    # membership, that window would show the car as free and oversell it.
+    branch = make_branch("LIS", "Lisbon", {VehicleType.SUV: 1})
+    system = make_system(clock, branch)
+    first = system.reserve("alice", VehicleType.SUV, "LIS", WEEK)
+    assert branch.available(VehicleType.SUV, WEEK) == 0
+
+    system._claim(first.id, ReservationStatus.RESERVED, ReservationStatus.PICKED_UP)
+    assert branch.available(VehicleType.SUV, WEEK) == 0  # still held: no plate pinned yet
+    with pytest.raises(NoVehicleAvailableError):
+        system.reserve("bob", VehicleType.SUV, "LIS", WEEK)
+
+    branch.check_out(system._reservations[first.id])
+    assert branch.available(VehicleType.SUV, WEEK) == 0  # now a calendar block, never -1
+
+
 # --8<-- [start:upgrade]
 def test_pickup_walks_the_upgrade_ladder_when_the_booked_class_is_out(clock: FakeClock) -> None:
     branch = make_branch("LIS", "Lisbon", {VehicleType.ECONOMY: 1, VehicleType.SEDAN: 1})

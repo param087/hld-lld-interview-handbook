@@ -2,9 +2,12 @@
 
 The crux of the LeetCode design in one module:
 
-* :class:`SubmissionQueue` is a lease queue: a worker claims a submission, and if the worker
-  dies the lease expires and another worker picks it up. Exhausted attempts become a verdict
-  of ``INTERNAL_ERROR`` instead of a submission that hangs forever in "judging".
+* :class:`SubmissionQueue` is a lease queue: a worker claims a submission and gets a
+  :class:`Lease` with a fencing token, and if the worker dies the lease expires and another
+  worker picks it up under a **new** token. Only the current token may complete, so a
+  reclaimed worker that wakes up late cannot release its replacement's lease. Exhausted
+  attempts become a verdict of ``INTERNAL_ERROR`` instead of a submission that hangs forever
+  in "judging".
 * :class:`SimulatedSandbox` stands in for a container with a seccomp profile and cgroup limits:
   it enforces a wall-clock limit, a memory limit and an output limit, and reports what the
   program actually consumed.
@@ -23,7 +26,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
-from common import Clock, NotFoundError, SystemClock, ValidationError
+from common import Clock, ConflictError, NotFoundError, SystemClock, ValidationError
 
 
 # --8<-- [start:verdicts]
@@ -207,9 +210,16 @@ class Judge:
 
 
 # --8<-- [start:queue]
-@dataclass(slots=True)
-class _Lease:
+@dataclass(frozen=True, slots=True)
+class Lease:
+    """Proof that this worker, and nobody else, currently owns ``submission_id``.
+
+    ``token`` is a **fencing token**: a fresh one is minted on every claim, so the lease a
+    reclaimed worker is still holding in memory is detectably older than the live one.
+    """
+
     submission_id: str
+    token: str
     expires_at: float
     attempt: int
 
@@ -217,8 +227,9 @@ class _Lease:
 class SubmissionQueue:
     """FIFO queue with leases, so a worker that dies does not lose the submission.
 
-    ``_lock`` guards ``_ready``, ``_leases`` and ``_attempts`` together; every public method
-    takes it, which is why hundreds of workers can claim concurrently without double-judging.
+    ``_lock`` guards ``_ready``, ``_leases``, ``_attempts`` and ``_next_token`` together; every
+    public method takes it, which is why hundreds of workers can claim concurrently without
+    double-judging.
     """
 
     def __init__(
@@ -231,9 +242,10 @@ class SubmissionQueue:
         self._lease_seconds = lease_seconds
         self._max_attempts = max_attempts
         self._ready: list[str] = []
-        self._leases: dict[str, _Lease] = {}
+        self._leases: dict[str, Lease] = {}
         self._attempts: dict[str, int] = {}
         self._dead: list[str] = []
+        self._next_token = 0  # one counter for the queue: every grant ever made is ordered
         self._lock = threading.Lock()
 
     def submit(self, submission_id: str) -> None:
@@ -243,31 +255,49 @@ class SubmissionQueue:
             self._attempts[submission_id] = 0
             self._ready.append(submission_id)
 
-    def claim(self) -> str | None:
-        """Take the next submission and lease it. Returns None when the queue is empty."""
+    def claim(self) -> Lease | None:
+        """Take the next submission and lease it. Returns None when the queue is empty.
+
+        Every claim -- the first one and every re-claim after an expiry -- mints a **new**
+        token, which is exactly what makes the previous holder's lease stale.
+        """
         with self._lock:
             if not self._ready:
                 return None
             submission_id = self._ready.pop(0)
             self._attempts[submission_id] += 1
-            self._leases[submission_id] = _Lease(
+            self._next_token += 1
+            lease = Lease(
                 submission_id,
+                f"lt-{self._next_token}",
                 self._clock.now() + self._lease_seconds,
                 self._attempts[submission_id],
             )
-            return submission_id
+            self._leases[submission_id] = lease
+            return lease
 
-    def complete(self, submission_id: str) -> None:
-        """Release the lease. A worker whose lease already expired finds nothing to release.
+    def complete(self, submission_id: str, token: str) -> None:
+        """Release the lease. Only its current holder may, which is what stops a stolen lease.
 
-        A production queue also hands out a **lease token** and checks it here, so a worker that
-        was reclaimed and then woke up cannot release the lease of the worker that replaced it.
-        This model leans on the other half of the contract instead: the verdict write is
-        idempotent on ``submission_id``, so a late finisher rewrites the same answer.
+        Without the token, a worker whose lease expired, was reclaimed, and was re-claimed by
+        somebody else would pop the **replacement's** lease when it finally woke up -- and the
+        live worker would then fail to complete work it had actually done. Same check as
+        :meth:`hld.cron_scheduler.Scheduler.complete`, with a fencing token in place of a
+        worker id. The other half of the contract still holds: the verdict write is idempotent
+        on ``submission_id``, so a late finisher rewrites the same answer rather than a second.
         """
         with self._lock:
-            if self._leases.pop(submission_id, None) is None:
-                raise NotFoundError(f"submission {submission_id!r} is not leased")
+            self._require_current(submission_id, token)
+            del self._leases[submission_id]
+
+    def _require_current(self, submission_id: str, token: str) -> Lease:
+        """The lease must exist, carry this token, and not have run out."""
+        lease = self._leases.get(submission_id)
+        if lease is None:
+            raise NotFoundError(f"submission {submission_id!r} is not leased")
+        if lease.token != token or lease.expires_at <= self._clock.now():
+            raise ConflictError(f"token {token!r} no longer holds the lease on {submission_id!r}")
+        return lease
 
     def reclaim_expired(self) -> list[str]:
         """Re-queue leases that outlived a crashed worker; give up after ``max_attempts``."""
@@ -333,14 +363,24 @@ def main() -> None:
     queue = SubmissionQueue(clock=clock, lease_seconds=30.0, max_attempts=2)
     for name in ("sub-correct", "sub-wrong"):
         queue.submit(name)
-    claimed = queue.claim()
-    print(f"worker A claimed {claimed}, queue depth (ready, in flight) = {queue.depth()}")
+    stale = queue.claim()
+    if stale is None:
+        raise RuntimeError("the demo expects a ready submission here")
+    print(f"worker A claims {stale.submission_id}        -> token {stale.token}, depth (ready, in flight) {queue.depth()}")
     clock.advance(31)  # worker A was killed by the node autoscaler
-    print(f"reclaimed after the lease expired: {queue.reclaim_expired()}")
-    again = queue.claim()
-    if again is not None:
-        queue.complete(again)
-    print(f"worker B judged {again}; depth now {queue.depth()}, dead letters {queue.dead_letters()}")
+    print(f"31 s later, the reaper runs        -> requeued {queue.reclaim_expired()}")
+    judged = queue.claim()  # worker B takes sub-wrong, the head of the ready list, and judges it
+    live = queue.claim()  # worker C re-claims sub-correct: attempt 2, and a brand-new token
+    if judged is None or live is None:
+        raise RuntimeError("the demo expects two ready submissions here")
+    queue.complete(judged.submission_id, judged.token)
+    print(f"worker C re-claims {live.submission_id}     -> token {live.token}, attempt {live.attempt}")
+    try:
+        queue.complete(stale.submission_id, stale.token)
+    except ConflictError as exc:
+        print(f"worker A wakes up, completes late  -> rejected: {exc}")
+    queue.complete(live.submission_id, live.token)
+    print(f"worker C completes it              -> depth {queue.depth()}, dead letters {queue.dead_letters()}")
 
 
 if __name__ == "__main__":

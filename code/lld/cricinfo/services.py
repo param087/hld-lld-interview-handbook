@@ -186,9 +186,16 @@ class ScoreUpdateService:
             return self._publish()
 
     def undo_last_ball(self) -> MatchSnapshot:
-        """Drop the last event and replay. Nothing is patched, so nothing can drift."""
+        """Drop the last event and replay. Nothing is patched, so nothing can drift.
+
+        Deliberately *not* routed through ``_current``: the ball a scorer most
+        often needs back is the one that ended the innings, and by then the
+        match is in a break rather than live. ``_settle`` reopens it.
+        """
         with self._lock:
-            setup, log = self._current()
+            if not self._innings:
+                raise MatchStateError(f"no innings has been opened (match is {self._status})")
+            setup, log = self._innings[-1], self._logs[-1]
             if not log:
                 raise MatchNotFoundError(f"innings {setup.number} has no deliveries to undo")
             log.pop()
@@ -208,7 +215,7 @@ class ScoreUpdateService:
                 raise MatchNotFoundError(f"innings {innings_number} has no delivery at index {index}")
             log[index] = replace(corrected, id=log[index].id)  # the event id is the audit trail
             if innings_number == len(self._innings):
-                self._settle(self._innings[-1])  # a correction can end (or un-end) the innings
+                self._settle(self._innings[-1])  # a correction can end -- or un-end -- the innings
             return self._publish()
 
     def end_innings(self) -> MatchSnapshot:
@@ -241,13 +248,30 @@ class ScoreUpdateService:
             raise UnknownPlayerError(f"{player_id} is not in {team.name}")
 
     def _settle(self, setup: InningsSetup) -> None:
-        """Decide, from the replayed innings, whether the match moved on."""
+        """Derive the match status from the replayed innings -- forwards *and* back.
+
+        Both directions matter. An undo or a correction can take back the ball
+        that ended an innings, and a status that only ever moved forward would
+        leave the match sitting in a break over an innings the replay says is
+        live again -- the scorecard and the status disagreeing is exactly the
+        drift that event sourcing is supposed to make impossible.
+        """
         match, _, _ = self._projector.project(self._innings, self._logs, self._status, self._version)
         innings = match.innings[setup.number - 1]
         if setup.target is not None and innings.runs() >= setup.target:
             self._finish(self._projector.team(setup.batting_team_id).name)
         elif innings.closed:
             self._close_innings(setup)
+        elif setup.number == len(self._innings) and self._status in (
+            MatchStatus.INNINGS_BREAK,
+            MatchStatus.COMPLETED,
+        ):
+            self._reopen()
+
+    def _reopen(self) -> None:
+        """The replay says the last innings is live again, so the match is too."""
+        self._status = MatchStatus.LIVE
+        self._result = ""
 
     def _close_innings(self, setup: InningsSetup) -> None:
         if len(self._innings) >= self._setup.spec.innings_per_match:

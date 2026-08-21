@@ -299,22 +299,32 @@ class AsyncHandler(Handler):
             self._shed(record)
 
     def _shed(self, record: LogRecord) -> None:
+        """Count what was actually lost: the evicted record, the new one, or both.
+
+        Both halves of ``DROP_OLDEST`` can race. If the queue drained between the
+        overflow and the eviction there is nothing to evict, and if a producer
+        refilled the freed slot the new record cannot take it. Counting the
+        outcome rather than assuming one loss keeps ``dropped`` honest, which is
+        the whole point of a bounded queue.
+        """
+        lost = 0
         if self.policy is OverflowPolicy.DROP_OLDEST:
             try:
                 self._queue.get_nowait()
                 self._queue.task_done()  # keep join() accounting correct
             except queue.Empty:
                 pass
+            else:
+                lost += 1  # the evicted record is gone whatever happens next
             try:
                 self._queue.put_nowait(record)
             except queue.Full:
-                pass
-            else:
-                with self._drop_lock:
-                    self.dropped += 1
-                return
-        with self._drop_lock:
-            self.dropped += 1
+                lost += 1  # a racing producer took the slot we just freed
+        else:
+            lost += 1  # DROP_NEWEST: the record never enters the queue
+        if lost:
+            with self._drop_lock:
+                self.dropped += lost
 
     def _run(self) -> None:
         while True:
