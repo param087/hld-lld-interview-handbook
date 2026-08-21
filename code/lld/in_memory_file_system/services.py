@@ -316,9 +316,17 @@ class SecureFileSystem:
         return node
 
     def _require_parent(self, path: str, needed: Permission) -> None:
-        parent_path = PathResolver.parent(path)
-        if self._fs.exists(parent_path):
-            self._require(parent_path, needed)
+        """Check the nearest ancestor that *exists*, not just the immediate parent.
+
+        Stopping at a missing parent is a hole, because ``mkdir`` creates every
+        level: ``mkdir /private/deep/sub`` under a root-only ``/private`` would
+        find no ``/private/deep`` to check, run no check at all, and create the
+        chain anyway. The root always exists, so the walk terminates.
+        """
+        current = PathResolver.parent(path)
+        while current != ROOT and not self._fs.exists(current):
+            current = PathResolver.parent(current)
+        self._require(current, needed)
 
 
 # --8<-- [end:proxy]

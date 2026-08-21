@@ -130,18 +130,21 @@ class Branch:
     def _available(self, vehicle_type: VehicleType, period: DateRange) -> int:
         """Cars of the class, minus those with a clashing calendar block, minus open holds.
 
-        A picked-up reservation is counted exactly once: as a calendar block on
-        the car it was pinned to. Only ``RESERVED`` rows are counted as holds,
-        which is why the two terms never double-count each other.
+        Membership of ``_bookings`` *is* the hold: a row is inserted by ``hold``
+        and removed only by ``check_out`` (which pins a plate in the same locked
+        block) or by ``release_hold``. Do not additionally filter on
+        ``status is RESERVED`` -- ``pick_up`` flips the status under the registry
+        lock before ``check_out`` takes the branch lock, so for that window the
+        reservation would be counted in neither term and the class would look one
+        car freer than it is. Counting the ledger closes the window, and nothing
+        is ever counted twice because the row is gone before the block exists.
         """
         fleet = self._pool.serviceable(vehicle_type)
         blocked = sum(1 for v in fleet if not v.calendar.is_free(period))
         held = sum(
             1
             for r in self._bookings.values()
-            if r.vehicle_type is vehicle_type
-            and r.status is ReservationStatus.RESERVED
-            and r.period.overlaps(period)
+            if r.vehicle_type is vehicle_type and r.period.overlaps(period)
         )
         return len(fleet) - blocked - held
 

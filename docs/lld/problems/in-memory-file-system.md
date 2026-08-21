@@ -352,7 +352,7 @@ Finally the service. Read `mv` first: the subtree check, the destination rules, 
 --8<-- "code/lld/in_memory_file_system/services.py:filesystem"
 ```
 
-The proxy is short, which is the point — it adds one concern and delegates everything else.
+The proxy is short, which is the point — it adds one concern and delegates everything else. The one subtlety is `_require_parent`: it walks up to the nearest ancestor that *exists*, because `mkdir` creates every missing level, so checking only the immediate parent lets `mkdir /private/deep/sub` build a whole chain inside a directory the caller cannot write to without any check running at all.
 
 ```python title="code/lld/in_memory_file_system/services.py — the permission proxy"
 --8<-- "code/lld/in_memory_file_system/services.py:proxy"
@@ -417,7 +417,7 @@ backup/
 
 ## Tests
 
-`tests/test_in_memory_file_system.py` has 29 cases (14 functions, two of them parameterised). The four worth walking through are the happy path, path normalisation, `mv`, and concurrency.
+`tests/test_in_memory_file_system.py` has 30 cases (15 functions, two of them parameterised). The four worth walking through are the happy path, path normalisation, `mv`, and concurrency.
 
 The happy path pins `mkdir -p`, append, sorted `ls`, recursive size, the injected clock and the LeetCode `ls`-on-a-file rule in six assertions:
 
@@ -443,7 +443,7 @@ The concurrency test is the one to describe out loud: 200 tasks over eight threa
 --8<-- "code/lld/in_memory_file_system/tests/test_in_memory_file_system.py:concurrency"
 ```
 
-The rest cover: seven invalid operations through `parametrize`; `mkdir` idempotency and its refusal to walk through a file; recursive `rm` releasing the whole subtree; the unlink-with-an-open-handle sequence; `cp` producing an independent deep copy; three visitors reporting and searching; `walk` yielding a sorted depth-first order; 300 concurrent appends to one file keeping every line; the permission proxy denying a guest and admitting the owner and an admin; and the LeetCode 588 example sequence verbatim. Run them with `uv run pytest code/lld/in_memory_file_system -q`.
+The rest cover: seven invalid operations through `parametrize`; `mkdir` idempotency and its refusal to walk through a file; recursive `rm` releasing the whole subtree; the unlink-with-an-open-handle sequence; `cp` producing an independent deep copy; three visitors reporting and searching; `walk` yielding a sorted depth-first order; 300 concurrent appends to one file keeping every line; the permission proxy denying a guest and admitting the owner and an admin, and refusing a deep `mkdir` whose parent does not exist yet; and the LeetCode 588 example sequence verbatim. Run them with `uv run pytest code/lld/in_memory_file_system -q`.
 
 ## 45-minute pacing
 

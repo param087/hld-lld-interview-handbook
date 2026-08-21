@@ -232,6 +232,22 @@ def test_permission_proxy_denies_then_the_owner_and_admin_pass(fs: FileSystem) -
     assert fs.stat("/srv/secret.txt").mode() == "-rw----"
 
 
+def test_the_proxy_checks_the_nearest_existing_ancestor(fs: FileSystem) -> None:
+    """mkdir -p creates every level, so checking only the immediate parent is a hole."""
+    fs.mkdir("/private")
+    fs.chmod("/private", Permission.ALL, Permission.NONE)
+    mallory = SecureFileSystem(fs, User("mallory"))
+
+    with pytest.raises(PermissionDeniedError):
+        mallory.mkdir("/private/sub")
+    with pytest.raises(PermissionDeniedError):
+        mallory.mkdir("/private/deep/sub")  # the parent does not exist yet
+    with pytest.raises(PermissionDeniedError):
+        mallory.write("/private/deep/note.txt", "sneaky")
+
+    assert fs.ls("/private") == []  # nothing was created behind the check
+
+
 def test_leetcode_588_example_sequence(fs: FileSystem) -> None:
     assert fs.ls("/") == []
     fs.mkdir("/a/b/c")

@@ -7,12 +7,12 @@ description: WhatsApp/Messenger/Slack-style messaging — WebSocket session regi
 ## TL;DR
 
 - A chat system is a **stateful real-time problem**: millions of long-lived WebSockets, each pinned to one server, and a write path that must find the right server for every recipient in under a round trip.
-- The cruxes an interviewer probes: (1) **connection management and the session registry** (which server holds a user), (2) **per-conversation ordering** with sequence numbers and idempotent message ids, (3) **storage by conversation** plus multi-device sync, (4) **delivery states** with an offline path through push, (5) **group fan-out and presence** without melting the pub/sub tier.
+- The cruxes an interviewer probes: (1) **connection management and the session registry** (which server holds a user), (2) **per-conversation ordering** with sequence numbers and idempotent ids, (3) **storage by conversation** plus multi-device sync, (4) **delivery states** with push for offline users, (5) **group fan-out and presence** without melting the pub/sub tier.
 - It handles 50M DAU and 70k messages/s at peak with ~150 chat servers, a Redis session registry, a per-server pub/sub channel, and a wide-column message store partitioned by `conversation_id`.
 
 ## Problem statement and clarifying questions
 
-"Design a messaging service like WhatsApp: one-to-one and group chats, delivered in real time when the recipient is online and on reconnect when they are not, with sent/delivered/read indicators." Group sizes and multi-device decide how much fan-out you sign up for, so pin those down first.
+"Design a messaging service like WhatsApp: one-to-one and group chats, delivered in real time when the recipient is online and on reconnect when not, with sent/delivered/read indicators." Group sizes and multi-device decide how much fan-out you sign up for.
 
 | Question | Assumption taken |
 |---|---|
@@ -67,7 +67,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Message store | 70k writes/s x 3 replicas = 210k node-writes/s at ~5k-10k per node | ~25-40 wide-column nodes |
 | Recent-messages cache | 20% of 50M conversations x 50 messages x 100 B | ~50 GB |
 
-Say two things out loud: the read/write ratio is close to **1:1**, so there is no feed to precompute; and the hard resource is **10M open sockets**, which forces a stateful tier and therefore a registry mapping users to servers.
+Say two things out loud: the read/write ratio is ~**1:1**, so there is no feed to precompute; and the hard resource is **10M open sockets**, forcing a stateful tier and a registry mapping users to servers.
 
 ## API design
 
@@ -260,7 +260,7 @@ sequenceDiagram
     W1->>CS: receipts(cat, trio, delivered up to n)
 ```
 
-Walk-through: the sender's ack depends on exactly one durable write, so "sent" arrives in about one store round trip. Finding Bob costs one registry lookup and one publish; no chat server ever talks to another directly. An offline device needs no separate queue — the message store *is* the queue, indexed by `seq`, and push exists only to wake the device up.
+Walk-through: the sender's ack depends on one durable write, so "sent" arrives in about one store round trip. Finding Bob costs one registry lookup and one publish; no chat server talks to another directly. An offline device needs no queue — the message store *is* the queue, indexed by `seq`, and push only wakes the device up.
 
 ## Deep dive: connection management and the session registry
 
@@ -273,9 +273,9 @@ The probing question is "Ann is connected to server 17 and Bob to server 203 —
 | SSE | Yes, server to client only | One HTTP connection | Client-to-server needs a second channel |
 | WebSocket | Yes, both directions, framed | One TCP connection, ~one heartbeat per 30 s | Stateful servers: you now need a registry |
 
-WebSocket wins because chat traffic is bidirectional and bursty; the price is that a user is *somewhere* and every sender must find out where (transport background: the [networking page](../fundamentals/networking-essentials.md)).
+WebSocket wins because chat traffic is bidirectional and bursty; the price is that a user is *somewhere* and every sender must find out where (background: the [networking page](../fundamentals/networking-essentials.md)).
 
-The mechanism has three parts. An **L4 load balancer** pins a new connection to a server — it is one TCP stream, so stickiness is free. The server writes `HSET sessions:{user_id} {device_id} {server_id}` to the **registry** and deletes it on a clean close. Every server **subscribes to its own pub/sub channel**, so a router publishes an envelope to `channel:{server_id}` and that server writes the frame to the local socket. Heartbeats run at two levels: ping/pong per socket every 30 s catches half-open TCP connections, and one liveness key per server refreshed every 5 s makes crashes cheap — nobody deletes 100k hash fields, readers see a stale server id, treat the user as offline and clean up lazily.
+The mechanism has three parts. An **L4 load balancer** pins a new connection to a server — one TCP stream, so stickiness is free. The server writes `HSET sessions:{user_id} {device_id} {server_id}` to the **registry** and deletes it on a clean close. Every server **subscribes to its own pub/sub channel**, so a router publishes to `channel:{server_id}` and that server writes the frame locally. Heartbeats run at two levels: ping/pong per socket every 30 s catches half-open TCP connections, and a per-server liveness key refreshed every 5 s makes crashes cheap — nobody deletes 100k hash fields; readers see a stale server id, treat the user as offline and clean up lazily.
 
 ```python title="code/hld/chat_router.py — registry, bus and chat server"
 --8<-- "code/hld/chat_router.py:registry"
@@ -285,7 +285,7 @@ The mechanism has three parts. An **L4 load balancer** pins a new connection to 
 --8<-- "code/hld/chat_router.py:bus"
 ```
 
-Two details that distinguish a strong answer: the registry is per *device*, not per user, because multi-device means fan-out to every session; and it is a **rebuildable cache** — losing it costs one reconnect storm, absorbed with backoff and connection-rate limits, not with a replicated database.
+Two details that distinguish a strong answer: the registry is per *device*, not per user, since multi-device means fan-out to every session; and it is a **rebuildable cache** — losing it costs one reconnect storm, absorbed with backoff and rate limits, not a replicated database.
 
 ## Deep dive: ordering, message ids and storage
 
@@ -298,7 +298,7 @@ Two details that distinguish a strong answer: the registry is per *device*, not 
 | Global Snowflake id | Yes, roughly by time | None (ids are sparse) | An id service | Clients cannot tell "I missed one" |
 | Per-conversation sequence number | Yes, exact | Yes: 41 then 43 means 42 is missing | A single sequencer per conversation | The sequencer is a hot spot for a giant channel |
 
-Choose the **per-conversation `seq`** assigned by a single owner: the chat-service shard that owns `conversation_id` (a Redis `INCR` per conversation in v1). Dense ids make every API cursor (`after_seq`, `read_up_to_seq`, `last_synced_seq`) an integer, and a device that holds 41 and receives 43 syncs 42 without server help. Keep a time-sortable global id as a secondary attribute for cross-conversation features (search, export), but never order by it — [time and ordering](../fundamentals/time-and-ordering.md) covers why wall clocks cannot do this job.
+Choose the **per-conversation `seq`** assigned by a single owner: the chat-service shard that owns `conversation_id` (a Redis `INCR` per conversation in v1). Dense ids make every API cursor an integer, and a device that holds 41 and receives 43 syncs 42 without server help. Keep a time-sortable global id as a secondary attribute for search and export, but never order by it — [time and ordering](../fundamentals/time-and-ordering.md) explains why wall clocks cannot do this job.
 
 **Multi-device sync** falls out of the same key: each device keeps `last_synced_seq` per conversation and asks for `after_seq` on connect, so the server tracks nothing about which device has what — it answers range queries. Idempotency is part of the write: `(sender_id, client_msg_id)` maps to the `seq` it got, so a retry after a lost ack returns the same message instead of a duplicate.
 
@@ -310,7 +310,7 @@ Note where the lock sits: sequencing and storing happen under it; routing (regis
 
 ## Deep dive: delivery states, offline queue and push
 
-The sender's ticks are a per-recipient state machine, and the rule that keeps it honest is **forward only**: a late "delivered" ack after a "read" cursor must not regress the state.
+The sender's ticks are a per-recipient state machine whose one rule is **forward only**: a late "delivered" ack arriving after a "read" cursor must not regress the state.
 
 **Message status as the sender's client and the server see it.**
 
@@ -327,9 +327,9 @@ stateDiagram-v2
     Read --> [*]
 ```
 
-Delivered and read are **cursors, not per-message events**: the device sends `delivered {up_to_seq}` once per batch, and "read" is the conversation's `read_up_to_seq`. That collapses 2B potential receipt writes a day into a fraction of that, and makes the server logic a comparison (`seq <= up_to_seq`) rather than a lookup per message. For groups the sender's state is the weakest state across members, stored as a delivered/read counter per message rather than 500 rows.
+Delivered and read are **cursors, not per-message events**: the device sends `delivered {up_to_seq}` once per batch, and "read" is the conversation's `read_up_to_seq`. That collapses 2B potential receipt writes a day into a fraction of that, and makes the server logic a comparison (`seq <= up_to_seq`) rather than a per-message lookup. For groups the sender's state is the weakest state across members, stored as a counter per message rather than 500 rows.
 
-Offline handling needs no separate queue: the store already holds every message by `seq`, so a returning device just syncs. The only extra work is a **push notification** to wake the device, sent by workers that consume the `message-stored` topic, check the registry, and call the [notification system](notification-system.md) for users with no live session. Collapse pushes per conversation ("3 new messages") and never include an end-to-end encrypted body.
+Offline handling needs no queue: the store already holds every message by `seq`, so a returning device syncs. The only extra work is a **push notification** to wake it, sent by workers that consume the `message-stored` topic, check the registry, and call the [notification system](notification-system.md) for users with no live session. Collapse pushes per conversation ("3 new messages") and never include an encrypted body.
 
 What the module prints for the trio scenario (Cat offline, Ann on two devices):
 
@@ -381,9 +381,9 @@ sequenceDiagram
     Note over CS,PS: receipts are counted per message, not fanned back to every member
 ```
 
-Sizing the fan-out: 70k messages/s at peak, mostly one-to-one with groups averaging tens of online members, lands around 150k socket writes/s across the fleet and a few tens of thousands of publishes per second once envelopes are grouped by server — inside one Redis pub/sub shard's ~100k ops/s, with room for a second shard keyed by server id. Capping group size at 500 bounds the per-message cost; beyond that you switch to **fan-out on read**, where the channel stores the message once and clients pull by `seq` on open or on a lightweight "new seq" ping.
+Sizing the fan-out: 70k messages/s at peak, mostly one-to-one with groups averaging tens of online members, lands around 150k socket writes/s and a few tens of thousands of publishes per second once envelopes are grouped by server — inside one Redis pub/sub shard's ~100k ops/s, with room for a second keyed by server id. Capping group size at 500 bounds the per-message cost; beyond that you switch to **fan-out on read**, where the channel stores the message once and clients pull by `seq`.
 
-**Presence** is the same problem with a worse ratio: one online/offline flip for a user with 300 contacts is 300 deliveries, and a phone in a lift flips several times a minute. Three tactics: derive online state from the registry rather than a separate heartbeat, **debounce** transitions with a 30 s grace period before publishing "offline", and fan out only to contacts who currently have the app open. "Last seen" is written lazily on disconnect; [Nearby Friends](nearby-friends.md) scales this pattern to location updates every 30 s.
+**Presence** is the same problem with a worse ratio: one flip for a user with 300 contacts is 300 deliveries, and a phone in a lift flips several times a minute. Three tactics: derive online state from the registry rather than a separate heartbeat, **debounce** transitions with a 30 s grace period before publishing "offline", and fan out only to contacts with the app open. "Last seen" is written lazily on disconnect; [Nearby Friends](nearby-friends.md) scales this pattern to 30-second location updates.
 
 ## Scaling, bottlenecks and failure modes
 
@@ -429,13 +429,13 @@ What changes from v1: the sequencer becomes a sharded service owning conversatio
 
 What breaks first, and what you do about it:
 
-- **Reconnect storms**: a crash or a deploy drops 100k sockets at once; clients back off with jitter, the load balancer caps new connections per second, and the registry absorbs 100k `HSET`s over a minute instead of a second.
-- **Registry staleness**: a router publishes to a server that is gone, the publish finds no subscriber, so the router marks the user offline and sends a push; the client reconnects and syncs. Nothing is lost because the store, not the socket, is the source of truth.
-- **Hot conversations**: a 500-member group at 10 messages/s is 5k deliveries/s on one sequencer and one partition. Sequencers are cheap, so the fix is capping group size and grouping publishes per server; larger audiences use fan-out on read.
+- **Reconnect storms**: a crash or a deploy drops 100k sockets at once; clients back off with jitter, the load balancer caps new connections per second, and the registry absorbs 100k `HSET`s over a minute, not a second.
+- **Registry staleness**: a router publishes to a server that is gone, finds no subscriber, marks the user offline and pushes; the client reconnects and syncs. Nothing is lost because the store, not the socket, is the source of truth.
+- **Hot conversations**: a 500-member group at 10 messages/s is 5k deliveries/s on one sequencer and one partition. Sequencers are cheap, so cap group size and group publishes per server; larger audiences use fan-out on read.
 - **Hot partitions in the store**: bucketing by `seq // 10_000` bounds any single partition; time-bucketing is the alternative when messages are sparse.
 - **Kafka lag**: messages are already acked from the replicated log, so lag delays push notifications and store writes, never delivery to online users.
-- **Multi-region**: pin a conversation to a home region where its sequencer lives; members elsewhere pay one cross-region round trip (~70-150 ms) on send, inside the 500 ms budget. Replicate the store asynchronously for local reads and failover.
-- **Degradation order**: drop typing indicators first, then presence fan-out, then read receipts; never the message path.
+- **Multi-region**: pin a conversation to the home region of its sequencer; members elsewhere pay one cross-region round trip (~70-150 ms) on send, inside the 500 ms budget. Replicate the store asynchronously for local reads and failover.
+- **Degradation order**: typing indicators go first, then presence fan-out, then read receipts; never the message path.
 
 ## Trade-offs summary
 
@@ -471,7 +471,7 @@ What breaks first, and what you do about it:
     Typing indicators are fire-and-forget, sent at most every 3 s, only to members with the conversation open, and never stored. Presence transitions are debounced over 30 s and fanned out only to contacts who are online. Both are the first things you shed under pressure.
 
 !!! tip "Interview tip"
-    Lead with the state: "10M open sockets means users are pinned to servers, so the first component I need is a registry that says where a user is, and the second is a way to publish to that server." That is why chat differs from every stateless case study.
+    Lead with the state: "10M open sockets means users are pinned to servers, so the first component is a registry saying where a user is, and the second is a way to publish to that server." That is why chat differs from every stateless case study.
 
 !!! warning "Common mistake"
     Ordering messages by client or server timestamp. Two devices, two servers and one clock-skew incident later, the conversation reads differently on each phone. Assign a per-conversation sequence number from a single owner and make every API cursor that number.

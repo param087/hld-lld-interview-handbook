@@ -401,7 +401,7 @@ broker state=stopped, dead letters=1
 
 ## Tests
 
-`tests/test_pub_sub_system.py` has 22 cases. Every asynchronous assertion uses a barrier — `RecordingConsumer.wait_for` or `Broker.drain` — so nothing sleeps and nothing is timing-dependent.
+`tests/test_pub_sub_system.py` has 22 cases. Every asynchronous assertion uses a barrier — `RecordingConsumer.wait_for` or `Broker.drain` — so nothing waits on a fixed delay and nothing is timing-dependent. The one exception is the close-while-blocked test, which parks a producer for 20 ms so the shutdown path it is aiming at is the one that runs.
 
 The group test asserts the two guarantees at once: independent cursors across groups, and per-key order inside one:
 
