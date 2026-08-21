@@ -253,6 +253,7 @@ nav:
           - Design a food delivery system (Swiggy, Zomato, DoorDash): lld/problems/food-delivery.md
           - Design Uber (LLD) with driver matching: lld/problems/ride-sharing-lld.md
           - Design Stack Overflow: lld/problems/stack-overflow.md
+          - Design Amazon (cart, order, inventory, payment): lld/problems/ecommerce-order-inventory.md
           - Design Cricinfo (live scoreboard): lld/problems/cricinfo.md
           - Design a meeting scheduler and calendar: lld/problems/meeting-scheduler.md
           - Design a traffic signal controller: lld/problems/traffic-signal.md
@@ -264,6 +265,7 @@ nav:
           - Design a notification service (LLD): lld/problems/notification-service.md
           - Design an online auction: lld/problems/online-auction.md
           - Design a restaurant management system: lld/problems/restaurant-management.md
+          - Design a learning management system: lld/problems/learning-management.md
           - Design an in-memory key-value store with transactions: lld/problems/kv-store-transactions.md
           - Design a bowling alley: lld/problems/bowling-alley.md
   - Cheatsheets:
@@ -283,6 +285,7 @@ nav:
       - mocks/index.md
       - "Mock HLD interview: news feed": mocks/mock-hld-news-feed.md
       - "Mock HLD interview: chat system": mocks/mock-hld-chat.md
+      - "Mock HLD interview: Ticketmaster": mocks/mock-hld-ticketmaster.md
       - "Mock LLD interview: parking lot": mocks/mock-lld-parking-lot.md
       - "Mock LLD interview: elevator system": mocks/mock-lld-elevator.md
       - "Mock LLD interview: movie ticket booking": mocks/mock-lld-movie-ticket-booking.md

@@ -17,7 +17,7 @@ Five rubric rows:
 | Requirements and scope | Overselling, hold duration and fairness settled before a box is drawn |
 | Estimation | The gap between steady writes and on-sale arrivals, from the [latency and estimation tables](../cheatsheets/latency-and-estimation.md) |
 | High-level design | An inventory path that never locks across a human, on the board by minute 24 |
-| Depth on the cruxes | Concurrency control, the waiting room, the payment race, each with a number |
+| Depth on the cruxes | Concurrency, the waiting room and the payment race, each with a number |
 | Communication and recovery | Taking a correctness counter-example cleanly, rebuilding without arguing |
 
 The archetype is **contended inventory**: throughput is trivial, contention is vicious, and the failure that matters is one seat sold twice.
@@ -28,13 +28,13 @@ The archetype is **contended inventory**: throughput is trivial, contention is v
 |---|---|---|---|---|
 | 0-2 | Prompt | The prompt, plus "I will be difficult about correctness" | Restates it, names never-oversell as the invariant | Plan on the board |
 | 2-7 | Requirements | Answers five clarifiers; the scale answer surprises | Functional verbs, the invariant, out of scope | Requirements list |
-| 7-12 | Estimation | "And during the on-sale?" | 20 writes/s steady against 17k arrivals/s; map read bandwidth | Estimation table, two ratios circled |
+| 7-12 | Estimation | "And during the on-sale?" | 20 writes/s against 17k arrivals/s; map read bandwidth | Estimation table, two ratios circled |
 | 12-16 | API and data model | "What is `version` for?" | Six endpoints; `SEAT` with status and version, sharded by event | Schema sketch |
 | 16-20 | v1 design | Silent | Draws the browse and hold paths; no queue yet | **Diagram v1** |
 | 20-26 | Concurrency | "The fan takes four minutes to type a card number" | Proposes row locks, is killed, switches to TTL holds | Seat lifecycle sketched |
-| 26-32 | The spike | "2 million fans in two minutes" | Rejects rate limiting, derives the admission rate | **Diagram v2** with the waiting room and map cache |
+| 26-32 | The spike | "2 million fans in two minutes" | Rejects rate limiting, derives the admission rate | **Diagram v2**: waiting room, map cache |
 | 32-38 | Payment race | "The hold expires at 600 s, the capture lands at 615 s" | Three cases: grace window, version check, idempotency key | Race drawn as a timeline |
-| 38-42 | Read path | "200k people watching one map" | Packed array plus SSE deltas; the bandwidth comparison | **Diagram v3** after the deep dives |
+| 38-42 | Read path | "200k people watching one map" | Packed array plus SSE deltas; the bandwidth comparison | **Diagram v3**, after the dives |
 | 42-44 | Wrap-up | "What breaks, and what about hotels?" | Hot shard, retry storms, the room-night variant | Trade-off list |
 | 44-45 | Close | "What would you do differently?" | Names the locking instinct and where it came from | — |
 
@@ -46,7 +46,7 @@ The archetype is **contended inventory**: throughput is trivial, contention is v
 
 > **Interviewer:** Never, for concerts. That is the one thing that must not happen.
 
-> **Candidate:** Then seat state is strongly consistent inside the partition that owns it, and I fail closed rather than double-sell. Second: named seats, or general admission?
+> **Candidate:** Then seat state is strongly consistent inside its owning partition, and I fail closed rather than double-sell. Second: named seats, or general admission?
 
 > **Interviewer:** Named. Seat 14C.
 
@@ -70,7 +70,7 @@ The archetype is **contended inventory**: throughput is trivial, contention is v
 
 ### Minutes 7-12: two numbers, three orders of magnitude apart
 
-> **Candidate:** Steady state: 2 million tickets a day over ten to the fifth seconds is 20 writes a second, 60 at a three-times peak. A relational primary does 5 to 20 thousand writes a second, so that is under one percent of one machine.
+> **Candidate:** Steady state: 2 million tickets a day over ten to the fifth seconds is 20 writes a second, 60 at a three-times peak. A relational primary does 5 to 20 thousand writes a second, so that is under one percent of a machine.
 
 > **Candidate:** On-sale: 2 million fans over 120 seconds is about 17 thousand arrivals a second. As holds that is three times a primary's ceiling, and each hold is several row updates, so worse. I need to decide the admission rate rather than discover it: let through 2 thousand fans a second, each taking four seats, and the write path sits near a tenth of capacity. Two million at 2 thousand a second drains in about seventeen minutes, and I publish that estimate so clients stop polling.
 
@@ -88,11 +88,11 @@ The archetype is **contended inventory**: throughput is trivial, contention is v
 
 > **Interviewer:** What is `version` for?
 
-> **Candidate:** It is the optimistic lock and the receipt. Every conditional update bumps it, so when a payment comes back forty seconds later I can ask "is this still the seat I held?" by comparing a number rather than trusting that time has not passed.
+> **Candidate:** It is the optimistic lock and the receipt. Every conditional update bumps it, so when a payment returns forty seconds later I ask "is this still the seat I held?" by comparing a number, not by trusting that time has not passed.
 
 ### Minutes 16-20: v1 on the board
 
-**Diagram v1 at minute 18: browse from the catalog, hold against the inventory database. No queue yet — that is the next problem.**
+**Diagram v1 at minute 18: browse from the catalog, hold against the inventory database.**
 
 ```mermaid
 flowchart LR
@@ -111,7 +111,7 @@ flowchart LR
     e_gw --> s_order --> s_inv
 ```
 
-> **Candidate:** Browsing is read-mostly and cacheable, so it goes to the CDN and a catalog store off the critical path. Everything touching a seat goes through one inventory service in front of one sharded database, because the invariant lives there and nowhere else.
+> **Candidate:** Browsing is read-mostly and cacheable, so it goes to the CDN and a catalog store off the critical path. Everything touching a seat goes through one inventory service in front of one sharded database, because the invariant lives there and nowhere else. No queue yet.
 
 ### Minutes 20-26: the lock that kills the connection pool
 
@@ -135,13 +135,13 @@ flowchart LR
 
 > **Interviewer:** Back to Friday morning. Two million fans in two minutes.
 
-> **Candidate:** The instinct is rate limiting — cap the endpoint, return 429. Wrong twice: 1.99 million fans get an error, a fairness disaster when the promise is first-come-first-served, and every one retries a second later, so the load never drops. What I want is a **waiting room**.
+> **Candidate:** The instinct is rate limiting — cap the endpoint, return 429. Wrong twice: 1.99 million fans get an error, a fairness disaster when the promise is first-come-first-served, and every one retries a second later, so load never drops. What I want is a **waiting room**.
 
 > **Candidate:** Fans land on a static queue page from the CDN, so the spike never touches my services. A lightweight service assigns each arrival a monotonically increasing ticket in a Redis sorted set and returns position and estimated wait. A token issuer admits the head of the queue at 2 thousand a second, handing out short-lived **signed admission tokens** bound to the user and the event. The booking tier verifies signature and expiry locally — no lookup, no shared state on the hot path — and anything without a live token gets a 403.
 
 > **Candidate:** Three things come free. Bots wait like everyone else, which changes the economics of the attack. Ordering is fair by arrival, and refreshing cannot improve a ticket number. And it is a kill switch: set admission to zero and the site degrades to read-only browsing rather than errors. One detail — the token TTL must exceed a hold plus a payment, or fans are evicted mid-checkout.
 
-**Diagram v2 at minute 30: a queue in front of the booking tier, a cached seat map fed by change events, and a sweeper behind.**
+**Diagram v2 at minute 30: a queue in front of the booking tier, a cached seat map fed by change events, a sweeper behind.**
 
 ```mermaid
 flowchart LR
@@ -183,11 +183,11 @@ flowchart LR
 
 > **Interviewer:** A hold expires at 600 seconds. The capture webhook lands at 615. What does the fan own?
 
-> **Candidate:** Three answers, and I want to name all three, because picking one is how you get this wrong.
+> **Candidate:** Three answers, and I want all three named, because picking one is how you get this wrong.
 
 > **Candidate:** One: nobody took the seats in those fifteen seconds. The rows still carry my `hold_id` and the version I captured, so I confirm inside a thirty-second grace window and the fan gets their tickets. Refunding here is a self-inflicted support ticket.
 
-> **Candidate:** Two: somebody took them. My conditional update touches zero rows because `hold_id` or `version` moved, so the confirm fails, I void or refund the capture and tell the fan. Without the version check I would have silently overwritten the new holder — that is the double-sell.
+> **Candidate:** Two: somebody took them. My conditional update touches zero rows because `hold_id` or `version` moved, so the confirm fails, I refund the capture and tell the fan. Without the version check I would have silently overwritten the new holder — the double-sell.
 
 > **Candidate:** Three: the confirm is retried. Providers retry webhooks and clients retry timeouts, so `confirm` is idempotent: a second call for an already-confirmed hold returns the same booking.
 
@@ -195,7 +195,7 @@ flowchart LR
 
 > **Interviewer:** What reconciles all this?
 
-> **Candidate:** A nightly job comparing our bookings against the processor's settlement file, in three buckets: captured with no booking, which we refund; booking with no capture, which we chase; and amount mismatches. Those buckets are exactly the residue of the race we just drew — the safety net for cases the code cannot decide.
+> **Candidate:** A nightly job comparing our bookings against the processor's settlement file, in three buckets: captured with no booking, which we refund; booking with no capture, which we chase; and amount mismatches. Those buckets are the residue of the race we just drew — the net for cases the code cannot decide.
 
 ### Minutes 38-42: 200,000 people watching one map
 
@@ -207,7 +207,7 @@ flowchart LR
 
 > **Candidate:** And the consistency contract, said out loud: the map is at most a couple of seconds stale, the hold endpoint is authoritative, and the client treats a 409 as a normal outcome. Making the map strongly consistent would serialise 200 thousand readers behind the write path and buy nothing — even a perfect map is stale by the time it reaches a phone.
 
-**Diagram v3 at minute 41: inventory sharded by event, reads served from replicas and cache, payments and reconciliation drawn in.**
+**Diagram v3 at minute 41: inventory sharded by event, reads from replicas and cache, payments and reconciliation drawn in.**
 
 ```mermaid
 flowchart LR
@@ -282,12 +282,12 @@ flowchart LR
 
 ### What the interviewer wrote down while you talked
 
-- **min 1** — "asked about overselling before anything else. Correct instinct for this problem."
+- **min 1** — "asked about overselling before anything else. Correct instinct here."
 - **min 6** — "visibly surprised by 20 writes/s, said so, then used it. Did not pretend."
 - **min 9** — "derived 2k/s admission from primary capacity, rather than guessing a round number."
 - **min 11** — "'I nearly skipped the reads' — caught its own omission. Best number of the round."
 - **min 21** — "`FOR UPDATE` across a payment. Textbook failure; took only the pool argument."
-- **min 23** — "'a hold is data, not a lock' — one sentence, whole design repaired."
+- **min 23** — "'a hold is data, not a lock' — one sentence repaired the design."
 - **min 34** — "enumerated all three race outcomes unprompted. Where I decided."
 - **min 44** — "generalised its mistake into a rule about locks and humans. Hire."
 
