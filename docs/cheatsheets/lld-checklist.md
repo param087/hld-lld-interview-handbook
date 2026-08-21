@@ -60,7 +60,7 @@ Run it as a pre-flight before a mock, then as a silent audit while you write. Th
 
 | Item | What good looks like |
 |---|---|
-| Type hints | every signature annotated; `Ticket \| None`, never a bare `dict` |
+| Type hints | every signature annotated; the union syntax rather than `Optional[X]`, never a bare `dict` |
 | Value objects | `@dataclass(frozen=True, slots=True)` for `Money`, `TimeRange`, ids |
 | Entities | `@dataclass(slots=True)` with behaviour on it, not a bag of fields plus a service |
 | States | an `Enum` or `StrEnum`, never string literals compared with `==` |

@@ -49,7 +49,7 @@ Ask only what changes the design; assume the rest out loud. Pick two or three pe
 | p99 target per operation, measured where — client or server? | Whether a synchronous call fits, or the work goes to a queue |
 | What availability, expressed as downtime? | 99.9% is 8.76 hours a year; 99.99% is 52.6 minutes and rules out manual failover |
 | What may be degraded rather than unavailable? | The load-shedding order, and which features are the first to go |
-| One region or several? Where are the users? | A cross-region round trip is ~70 ms US coast to coast, ~150 ms transatlantic |
+| One region or several? Where are the users? | A cross-region round trip is ~70 ms US coast to coast, ~150 ms California to Europe |
 | Must data stay in a jurisdiction? | Regional partitioning by user home region, and whether a global index is even legal |
 | Active-active or active-passive across regions? | Conflict resolution, failover time, and whether writes are region-local |
 
