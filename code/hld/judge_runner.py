@@ -369,11 +369,12 @@ def main() -> None:
     print(f"worker A claims {stale.submission_id}        -> token {stale.token}, depth (ready, in flight) {queue.depth()}")
     clock.advance(31)  # worker A was killed by the node autoscaler
     print(f"31 s later, the reaper runs        -> requeued {queue.reclaim_expired()}")
-    judged = queue.claim()  # worker B takes sub-wrong, the head of the ready list, and judges it
+    judged = queue.claim()  # worker B takes sub-wrong, the head of the ready list
     live = queue.claim()  # worker C re-claims sub-correct: attempt 2, and a brand-new token
     if judged is None or live is None:
         raise RuntimeError("the demo expects two ready submissions here")
     queue.complete(judged.submission_id, judged.token)
+    print(f"worker B judges {judged.submission_id}          -> token {judged.token}, completed and released")
     print(f"worker C re-claims {live.submission_id}     -> token {live.token}, attempt {live.attempt}")
     try:
         queue.complete(stale.submission_id, stale.token)

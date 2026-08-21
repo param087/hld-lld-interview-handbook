@@ -226,7 +226,7 @@ sequenceDiagram
     SS->>SS: store the source, status Queued
     SS-)Q: enqueue submission_id
     SS-->>U: 202 {submission_id}
-    Q-->>W: claim with a lease
+    Q-->>W: claim: a lease and its fencing token
     W->>SB: compile inside a throwaway container
     loop each test case until one fails
         W->>SB: run with time, memory and output limits
@@ -234,7 +234,7 @@ sequenceDiagram
         W-)WS: case result streamed to the browser
     end
     W->>SS: write the final verdict (idempotent on submission_id)
-    W->>Q: complete and release the lease
+    W->>Q: complete under that token, releasing the lease
 ```
 
 **Read path: statements from the CDN, history from a sharded store, ranking from a sorted set.**
@@ -274,11 +274,13 @@ The probing question is "a judge worker is OOM-killed halfway through a submissi
 
 The queue hands out **leases**: a worker claims a submission, gets exclusive ownership for a lease window, and completes it. If the worker dies, the lease expires and the submission returns to the ready list. After a bounded number of attempts it becomes a dead letter with the `Internal Error` verdict and a page for an engineer — because the alternative, a submission that a poisonous input crashes forever, silently consumes the fleet.
 
+Every lease carries a **fencing token**, minted fresh on each claim, and only the token that currently holds a lease may complete it. Skip that check and the lease is stealable: a worker that was reclaimed and then woke up would release its *replacement's* lease, and the live worker would fail to record a verdict it had actually produced. It is the same rule the [job scheduler](job-scheduler.md) enforces with a worker id — a lease without a fencing token is a suggestion, not a lock.
+
 ```python title="code/hld/judge_runner.py — the leased submission queue"
 --8<-- "code/hld/judge_runner.py:queue"
 ```
 
-At-least-once execution means the verdict write must be **idempotent on `submission_id`**: judging the same source twice is wasteful but harmless, writing two verdicts is a bug. Two operational details complete the picture. Autoscale on **queue depth and oldest-message age**, not CPU: CPU is pinned at 100% by design, so it tells you nothing, while a rising oldest-message age is exactly the user-visible symptom. And run **separate queues for contests and practice**, so a contest's 1,000/s burst does not sit behind an hour of practice submissions — the same priority argument as in the [job scheduler](job-scheduler.md) design.
+The token settles ownership; idempotency handles what is left. At-least-once execution means the verdict write must be **idempotent on `submission_id`**: judging the same source twice is wasteful but harmless, writing two verdicts is a bug. Two operational details complete the picture. Autoscale on **queue depth and oldest-message age**, not CPU: CPU is pinned at 100% by design, so it tells you nothing, while a rising oldest-message age is exactly the user-visible symptom. And run **separate queues for contests and practice**, so a contest's 1,000/s burst does not sit behind an hour of practice submissions — the same priority argument as in the [job scheduler](job-scheduler.md) design.
 
 ## Deep dive: the sandbox
 
@@ -310,7 +312,7 @@ The probing question is "the same code got `Accepted` yesterday and `Time Limit 
 --8<-- "code/hld/judge_runner.py:judge"
 ```
 
-Judging **stops at the first failing case**, which saves most of the fleet's work (most failures are early) and keeps secret test data from leaking through timing. Cases stream to the browser as they complete over a WebSocket, while the durable record goes to the submission store — so a reload shows the same thing the stream did. Running the demo shows every verdict in the taxonomy and what the browser received:
+Judging **stops at the first failing case**, which saves most of the fleet's work (most failures are early) and keeps secret test data from leaking through timing. Cases stream to the browser as they complete over a WebSocket, while the durable record goes to the submission store — so a reload shows the same thing the stream did. Running the demo shows every verdict in the taxonomy, what the browser received, and a stale worker being fenced off the lease that replaced it:
 
 ```text
 sub-correct  Accepted              3/3  streamed=['t1', 't2', 't3']
@@ -319,9 +321,12 @@ sub-slow     Time Limit Exceeded   0/3 at t1  streamed=['t1']
 sub-hungry   Memory Limit Exceeded 0/3 at t1  streamed=['t1']
 sub-crash    Runtime Error         1/3 at t2  streamed=['t1', 't2']
 sub-broken   Compile Error         0/3  streamed=[]
-worker A claimed sub-correct, queue depth (ready, in flight) = (1, 1)
-reclaimed after the lease expired: ['sub-correct']
-worker B judged sub-wrong; depth now (1, 0), dead letters []
+worker A claims sub-correct        -> token lt-1, depth (ready, in flight) (1, 1)
+31 s later, the reaper runs        -> requeued ['sub-correct']
+worker B judges sub-wrong          -> token lt-2, completed and released
+worker C re-claims sub-correct     -> token lt-3, attempt 2
+worker A wakes up, completes late  -> rejected: token 'lt-1' no longer holds the lease on 'sub-correct'
+worker C completes it              -> depth (0, 0), dead letters []
 ```
 
 ## Deep dive: contest mode

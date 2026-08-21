@@ -6,13 +6,13 @@ description: Snowflake-style 64-bit, time-sortable ids at 100k/s with no coordin
 
 ## TL;DR
 
-- The ask is **64-bit, unique, roughly time-ordered ids at ~100k/s**, minted by hundreds of processes without talking to each other. The answer is a Snowflake layout: 41 bits of milliseconds since a custom epoch, 10 bits of machine id, 12 bits of per-millisecond sequence.
+- The ask is **64-bit, unique, roughly time-ordered ids at ~100k/s**, minted by hundreds of processes without talking to each other. The answer is a Snowflake layout: 41 bits of milliseconds since a custom epoch, 10 of machine id, 12 of per-millisecond sequence.
 - Coordination happens **once per process start** (lease a machine id from ZooKeeper), never per id. Minting is a lock, a clock read and two shifts: well under a microsecond.
-- The cruxes an interviewer probes: (1) why 64 bits and why k-sortable, (2) UUID vs auto-increment vs ticket server vs Snowflake, (3) **what happens when the clock goes backwards**, (4) machine-id assignment and sequence overflow, (5) when a 128-bit ULID, KSUID or UUIDv7 is the better answer.
+- The cruxes an interviewer probes: (1) why 64 bits and why k-sortable, (2) UUID vs auto-increment vs ticket server vs Snowflake, (3) **what happens when the clock goes backwards**, (4) machine-id assignment and sequence overflow, (5) when a 128-bit ULID, KSUID or UUIDv7 wins.
 
 ## Problem statement and clarifying questions
 
-"Design a service that hands out unique ids for posts, messages and orders across our fleet. Ids must fit in a database `bigint`, sort roughly by creation time, and must never collide — even during failovers and clock trouble." The answers decide whether you can avoid a central sequencer at all.
+"Design a service that hands out unique ids for posts, messages and orders across our fleet. Ids must fit in a `bigint`, sort roughly by creation time, and never collide — even during failovers and clock trouble." The answers decide whether you can avoid a central sequencer at all.
 
 | Question | Assumption taken |
 |---|---|
@@ -53,16 +53,16 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 
 | Quantity | Arithmetic | Result |
 |---|---|---|
-| Mint rate (write QPS) | posts ~5k/s + chat ~70k/s + orders, uploads, events; round up | ~100k ids/s peak, ~35k/s average |
+| Mint rate (write QPS) | posts ~5k/s + chat ~70k/s + orders, uploads, events | ~100k ids/s peak, ~35k/s average |
 | Per-machine ceiling | 4,096 sequence values per ms x 1,000 ms | ~4M ids/s per machine; 1,024 machines = ~4B/s in theory |
-| Read QPS (decompose, admin lookups) | on-call and tooling only | negligible, well under 1k/s |
-| Storage per year (key bytes) | 35k/s x 3 x 10^7 s = ~10^12 ids/year x 8 B | ~8 TB/year of primary-key bytes; 16 TB with 16 B UUIDs, before indexes and replication |
-| Bandwidth (service form only) | 100k/s x ~50 B per JSON envelope | ~5 MB/s = 40 Mbps — irrelevant; the library form sends nothing |
-| Cache size (range buffer, ticket fallback) | 1,000 clients x 1,000 pre-fetched ids x 8 B | 8 MB total — a per-client buffer, not a cache tier |
+| Read QPS (decompose, admin) | on-call and tooling only | negligible, well under 1k/s |
+| Storage per year (key bytes) | 35k/s x 3 x 10^7 s = ~10^12 ids/year x 8 B | ~8 TB/year of key bytes; 16 TB with 16 B UUIDs, before indexes and replication |
+| Bandwidth (service form only) | 100k/s x ~50 B per JSON envelope | ~5 MB/s = 40 Mbps; the library form sends nothing |
+| Cache size (ticket-range buffer) | 1,000 clients x 1,000 pre-fetched ids x 8 B | 8 MB total — a per-client buffer, not a cache tier |
 | Timestamp lifetime | 2^41 ms / (3.15 x 10^10 ms per year) | ~69 years from the custom epoch |
 | Coordination load | 1,024 workers x 1 lease renewal per 10 s | ~100 tiny writes/s to ZooKeeper |
 
-Say out loud what the table proves: **the generator stores nothing and sends nothing**; its only scarce resources are bits and the correctness of a clock. That is why the conversation is about the bit budget and the clock, not about servers.
+Say out loud what the table proves: **the generator stores nothing and sends nothing**; its only scarce resources are bits and the correctness of a clock. That is why the conversation is about the bit budget, not about servers.
 
 ## API design
 
@@ -114,8 +114,8 @@ erDiagram
 
 Store choices, with the sentence to say for each:
 
-- **MACHINE_LEASE**: ephemeral nodes in ZooKeeper or leases in etcd — a consensus-backed store with session expiry, because the property you need is "exactly one live owner per id". A thousand 100-byte records: size is irrelevant, linearizability is everything.
-- **ID_LAYOUT**: the config store, versioned and read once at start-up. Every worker pins the version it minted with; changing the layout is a deliberate migration, never a rolling config push.
+- **MACHINE_LEASE**: ephemeral nodes in ZooKeeper or leases in etcd — consensus-backed, with session expiry, because the property you need is "exactly one live owner per id". Size is irrelevant, linearizability is everything.
+- **ID_LAYOUT**: the config store, versioned and read once at start-up. Every worker pins the version it minted with; a layout change is a deliberate migration, never a rolling config push.
 - **TICKET_RANGE**: one row per range in a single-leader database (`UPDATE counter SET next = next + 1000 RETURNING next`). It is the fallback path, so its ~5k-20k writes/s ceiling does not matter.
 - **WORKER.last_seen_ms**: persisted every second so a restarted worker refuses to mint until the wall clock passes the last timestamp it issued (deep dive 3).
 
@@ -205,16 +205,16 @@ Walk-through: leasing a machine id — the one consensus-backed operation — ha
 
 ## Deep dive: the requirements and the bit budget
 
-The probing question is "why 64 bits, and why does order matter?" **64-bit** because a `bigint` key is 8 bytes in every index and foreign key where a UUID is 16; **k-sortable** because a B-tree fed ascending keys appends to the rightmost page while random keys split pages across the tree and thrash the cache — and sorting by id then gives creation order for free.
+The probing question is "why 64 bits, and why does order matter?" **64-bit** because a `bigint` key is 8 bytes in every index where a UUID is 16; **k-sortable** because a B-tree fed ascending keys appends to the rightmost page while random keys split pages across the tree — and sorting by id then gives creation order for free.
 
 The layout is a budget you spend deliberately:
 
 | Field | Bits | Range | Why this many |
 |---|---|---|---|
-| Sign | 1 | always 0 | keeps the id a positive signed `bigint` in Java, Postgres and MySQL |
-| Timestamp, ms since a custom epoch | 41 | 2^41 ms = ~69 years | counting from 1970 would already have spent most of the budget; a 2024 epoch lasts into the 2090s |
-| Machine id | 10 | 1,024 workers (Twitter split it 5 datacenter + 5 worker) | enough for a fleet; no two live workers may share a value |
-| Sequence | 12 | 4,096 per ms per worker | ~4M ids/s per worker, far above the ~1k-10k QPS one app server handles |
+| Sign | 1 | always 0 | keeps the id positive in Java, Postgres and MySQL |
+| Timestamp, ms since a custom epoch | 41 | 2^41 ms = ~69 years | 1970 would already have spent most of the budget; a 2024 epoch lasts into the 2090s |
+| Machine id | 10 | 1,024 workers (Twitter split it 5 datacenter + 5 worker) | enough for a fleet; no two live workers share a value |
+| Sequence | 12 | 4,096 per ms per worker | ~4M ids/s per worker, far above the ~1k-10k QPS an app server handles |
 
 The dials to mention: 8,000 workers takes 3 bits from the sequence (13 machine bits, and 512/ms is still 500k/s per worker); Instagram mints inside each Postgres shard with 41/13/10, so an id also names the shard; a second-resolution timestamp buys 1,000x the lifetime at the cost of ordering granularity.
 
@@ -389,38 +389,38 @@ What breaks first, and what you do about it:
 | Decision | Chosen | Alternatives | Why |
 |---|---|---|---|
 | Id width | 64-bit Snowflake | UUIDv4, UUIDv7/ULID/KSUID | 8-byte keys and k-sortable order; 128 bits only when coordination must be zero |
-| Bit split | 41 / 10 / 12 | 41 / 13 / 10 (Instagram), second-resolution time | 1,024 workers and 4,096/ms cover a large fleet; easy to re-split for a known shape |
-| Sequence overflow | borrow the next millisecond, bounded by a drift budget | spin until the next millisecond | flat latency, testable with a fake clock, same safety bound as the clock guard |
+| Bit split | 41 / 10 / 12 | 41 / 13 / 10 (Instagram), second-resolution time | 1,024 workers and 4,096/ms cover a large fleet; easy to re-split |
+| Sequence overflow | borrow the next millisecond, bounded by the drift budget | spin until the next millisecond | flat latency, testable with a fake clock, same safety bound |
 | Backwards clock | logical clock plus `max_drift_ms`, then refuse | throw immediately, sleep the skew | absorbs NTP jitter, turns a big step into an incident, never duplicates |
 | Machine id | ZooKeeper/etcd lease, lowest free id | static config, IP-derived | exactly one live holder by construction; crashed workers are reclaimed |
-| Delivery | embedded library first, thin service second | service only | removes the ~500 µs round trip and the service from the availability equation |
+| Delivery | embedded library first, thin service second | service only | removes the ~500 µs round trip from the availability equation |
 | Public exposure | ids as JSON strings | JSON numbers | 2^53 precision limit in JavaScript |
 
 ## Interviewer follow-ups
 
 ??? question "Why not just use UUIDv4 everywhere?"
-    Three costs: 16-byte keys instead of 8 in every index and foreign key, random inserts that split B-tree pages across the whole tree, and no time order, so "latest first" needs a separate `created_at` index. UUIDv7 fixes the last two if 128 bits are acceptable.
+    Three costs: 16-byte keys instead of 8 everywhere, random inserts that split B-tree pages across the whole tree, and no time order, so "latest first" needs a `created_at` index. UUIDv7 fixes the last two if 128 bits are acceptable.
 
 ??? question "What if two workers end up with the same machine id?"
-    Duplicates as soon as their clocks agree on a millisecond. Prevention is the lease — ephemeral node, heartbeat, stop minting before it expires. Detection is the primary key: an alert on constraint violations is how you learn a worker ignored a lost lease.
+    Duplicates as soon as their clocks agree on a millisecond. Prevention is the lease — ephemeral node, heartbeat, stop minting before it expires. Detection is the primary key; an alert on constraint violations catches a worker that ignored a lost lease.
 
 ??? question "How do you get past 4,096 ids per millisecond?"
-    You do not try: that is ~4M/s on one process, more than any app server usefully consumes. Add workers, which is what the machine-id bits are for. If one process truly needs more, take bits from the machine field or batch ids per request.
+    You do not try: that is ~4M/s on one process, more than any app server usefully consumes. Add workers — that is what the machine-id bits are for — or, if one process truly needs more, take bits from the machine field.
 
 ??? question "Can you make the ids strictly ordered across machines?"
-    Not with independent clocks. k-sortable means "ordered to within clock skew, typically a few milliseconds". Strict global order needs one sequencer per stream — a leader with a log, which caps you at that leader's throughput.
+    Not with independent clocks. k-sortable means "ordered to within clock skew, typically a few milliseconds". Strict global order needs one sequencer per stream, a leader with a log, capped at that leader's throughput.
 
 ??? question "What does Instagram do differently, and why?"
-    Ids are minted inside each Postgres shard by a PL/pgSQL function: 41 time bits, 13 bits of logical shard id, 10 of per-shard sequence. The shard id inside the key routes a read by id with no lookup table, at the cost of 1,024 ids/ms per shard.
+    Ids are minted inside each Postgres shard by a PL/pgSQL function: 41 time bits, 13 of logical shard id, 10 of per-shard sequence. The shard id in the key routes a read with no lookup table, at 1,024 ids/ms per shard.
 
 ??? question "How does this behave across two datacenters with independent clocks?"
     Split the machine bits so each datacenter owns a range and run a registry per datacenter. Uniqueness is unaffected because the machine bits differ; only cross-region order is approximate, to within the inter-region skew.
 
 !!! tip "Interview tip"
-    Open with the properties and the budget in one breath: "unique, 64-bit, k-sortable; 41 bits of milliseconds, 10 of machine, 12 of sequence, and the only coordination is leasing the machine id at start-up." Then go straight to the clock, because that is where the interviewer is heading.
+    Open with the properties and the budget in one breath: "unique, 64-bit, k-sortable; 41 bits of milliseconds, 10 of machine, 12 of sequence, and the only coordination is leasing the machine id at start-up." Then go straight to the clock, which is where the interviewer is heading.
 
 !!! warning "Common mistake"
-    Trusting the wall clock. A generator that resets its sequence whenever the clock value changes mints duplicates after the first backwards NTP step, and a restarted process forgets the last millisecond it used. Say "logical clock that never goes backwards, bounded drift, persist the high-water mark" before you are asked.
+    Trusting the wall clock. A generator that resets its sequence whenever the clock changes mints duplicates after the first backwards NTP step, and a restarted process forgets the last millisecond it used. Say "logical clock that never goes backwards, bounded drift, persist the high-water mark" before you are asked.
 
 ## 45-minute pacing
 
