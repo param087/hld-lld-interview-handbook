@@ -7,6 +7,7 @@ This handbook is written for an SDE2 candidate preparing for FAANG-style HLD (sy
 - No filler openers ("In today's world…"), no marketing adjectives, no emojis, no "as an AI", no "we will explore".
 - Vendor-neutral unless naming a technology *is* the point (Kafka, Redis, Cassandra, DynamoDB are fine as concrete examples).
 - Every claim with a number must come from `docs/cheatsheets/latency-and-estimation.md` (the canonical numbers page). Show your arithmetic.
+- QPS convention: divide by `10^5` and say so ("a day is ~10^5 s"). Apply the x1.15 exactness correction only when a page's argument turns on it, and name it when you do — otherwise two pages turn the same input into different QPS.
 - Use the terms in `GLOSSARY.md`. The linter fails pages that use banned terms.
 - Original wording only. Never paste text from books, blogs or papers; cite primary sources in `Related` instead.
 

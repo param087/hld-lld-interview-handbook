@@ -91,6 +91,7 @@ Serial dependencies multiply: two 99.9% services in series give 99.8%. Redundant
 | Elasticsearch data node | ~5k-10k docs/s indexing | query cost varies widely |
 | SSD (NVMe) | ~100k-1M random IOPS, ~2-7 GB/s sequential | |
 | HDD | ~100 IOPS, ~150 MB/s sequential | |
+| Long-lived connections (WebSocket) per node | ~100k stateful, ~10k-50k if the node also holds session state | tune-dependent; state the figure you assume |
 | 10 Gbps NIC | 1.25 GB/s | 25/100 Gbps common in datacenters |
 | Server memory / disk | 64-512 GB RAM, 2-20 TB disk | |
 
