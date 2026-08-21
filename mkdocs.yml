@@ -124,9 +124,23 @@ nav:
       - hld/index.md
       - Fundamentals:
           - hld/fundamentals/index.md
+          - The 45-minute HLD framework: hld/fundamentals/interview-framework.md
+          - Back-of-envelope estimation: hld/fundamentals/estimation.md
+          - From one server to millions of users: hld/fundamentals/scaling-primer.md
+          - Networking for system design: hld/fundamentals/networking-essentials.md
+          - Load balancing, reverse proxies and API gateways: hld/fundamentals/load-balancing-and-api-gateway.md
+          - Caching and CDNs: hld/fundamentals/caching-and-cdn.md
           - Choosing a database: hld/fundamentals/databases-sql-vs-nosql.md
+          - Storage engines and indexing: hld/fundamentals/storage-engines-and-indexing.md
+          - Replication: hld/fundamentals/replication.md
           - Partitioning, sharding and consistent hashing: hld/fundamentals/partitioning-and-consistent-hashing.md
+          - Transactions, 2PC, sagas and idempotency: hld/fundamentals/transactions-and-distributed-transactions.md
+          - CAP, PACELC and consistency models: hld/fundamentals/cap-pacelc-and-consistency-models.md
+          - Messaging, queues and Kafka internals: hld/fundamentals/messaging-and-event-streaming.md
+          - Probabilistic data structures: hld/fundamentals/probabilistic-data-structures.md
+          - Rate limiting: hld/fundamentals/rate-limiting.md
           - Security essentials: hld/fundamentals/security-essentials.md
+          - Observability, SLOs and error budgets: hld/fundamentals/observability-and-slos.md
       - Case studies:
           - hld/case-studies/index.md
           - Design a news feed: hld/case-studies/news-feed.md
@@ -136,12 +150,35 @@ nav:
           - lld/fundamentals/index.md
       - Design patterns:
           - lld/patterns/index.md
+          - Design patterns overview: lld/patterns/patterns-overview.md
+          - Singleton: lld/patterns/singleton.md
+          - Factory Method: lld/patterns/factory-method.md
+          - Abstract Factory: lld/patterns/abstract-factory.md
           - Adapter: lld/patterns/adapter.md
+          - Bridge: lld/patterns/bridge.md
+          - Composite: lld/patterns/composite.md
+          - Decorator: lld/patterns/decorator.md
+          - Facade: lld/patterns/facade.md
+          - Flyweight: lld/patterns/flyweight.md
           - Chain of Responsibility: lld/patterns/chain-of-responsibility.md
+          - Command: lld/patterns/command.md
+          - Interpreter: lld/patterns/interpreter.md
+          - Iterator: lld/patterns/iterator.md
+          - Mediator: lld/patterns/mediator.md
           - Memento: lld/patterns/memento.md
+          - Observer: lld/patterns/observer.md
+          - State: lld/patterns/state.md
           - Strategy: lld/patterns/strategy.md
+          - Template Method: lld/patterns/template-method.md
+          - Visitor: lld/patterns/visitor.md
           - Repository: lld/patterns/repository.md
+          - Unit of Work: lld/patterns/unit-of-work.md
+          - Dependency Injection: lld/patterns/dependency-injection.md
+          - Null Object: lld/patterns/null-object.md
           - Specification: lld/patterns/specification.md
+          - Object Pool: lld/patterns/object-pool.md
+          - Pipeline and Middleware: lld/patterns/pipeline-middleware.md
+          - Event Bus: lld/patterns/event-bus.md
       - Problems:
           - lld/problems/index.md
           - Design a parking lot: lld/problems/parking-lot.md
