@@ -81,7 +81,7 @@ Only then turn to the closing three. **Concurrency**: name which lock protects w
 
 ## Applying it in the interview
 
-**The 45-minute timebox.** Six slots. Each problem page splits the middle to suit its own flow, but the first and last slots never move.
+**The 45-minute timebox.** Six slots; each problem page splits the middle to suit its own flow.
 
 | Minutes | Step | Deliverable on the board |
 |---|---|---|

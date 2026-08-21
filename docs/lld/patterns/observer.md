@@ -76,7 +76,8 @@ sequenceDiagram
     autonumber
     participant P as Publisher thread
     participant F as PriceFeed
-    participant W as Watchlist
+    participant W as tech Watchlist
+    participant X as energy Watchlist
     participant A as PriceAlert
     participant B as BrokenObserver
     participant E as on_error policy
@@ -85,12 +86,14 @@ sequenceDiagram
     Note over F: lock released before the first callback
     F->>+W: on_price(tick)
     W-->>-F: stores the latest price
+    F->>+X: on_price(tick)
+    X-->>-F: ignores AAPL, not in its symbols
     F->>+A: on_price(tick)
     A-->>-F: fires once, stays subscribed
     F->>+B: on_price(tick)
     B-->>-F: raises RuntimeError
     F->>E: on_error(observer, tick, exc)
-    F-->>-P: delivered = 2
+    F-->>-P: delivered = 3
 ```
 
 ## Canonical example in Python

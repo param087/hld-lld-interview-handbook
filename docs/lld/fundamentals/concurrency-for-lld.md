@@ -79,7 +79,7 @@ Many readers share; a writer needs the place to itself. The right structure when
 --8<-- "code/fundamentals/concurrency.py:rwlock"
 ```
 
-The decision worth naming is *preference*. Here a reader waits while a writer is active **or queued**, so a stream of readers cannot starve a writer; readers starved by constant writes is the trade you accept. An interviewer who asks "what if reads never stop?" is checking that you chose rather than copied. Volunteer the other caveat too: it is **not reentrant**, so re-taking the read lock deadlocks once a writer has queued between the two acquisitions.
+The decision worth naming is *preference*. Here a reader waits while a writer is active **or queued**, so a stream of readers cannot starve a writer; readers starved by constant writes is the trade you accept. An interviewer who asks "what if reads never stop?" is checking that you chose rather than copied. It is also **not reentrant**: re-taking the read lock deadlocks once a writer has queued.
 
 ### Thread-safe singletons and double-checked locking
 

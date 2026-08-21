@@ -104,7 +104,7 @@ sequenceDiagram
     S-->>A: rejected, token 1 is older than token 2
 ```
 
-That is the Redlock argument. Redlock takes a TTL lock on a majority of N independent Redis nodes; Kleppmann's objection is that its safety rests on wall-clock timing across machines that pause and clocks that jump, and that it issues no fencing token. Antirez's reply is that Redlock is safe under its stated timing model, and that the fencing objection applies to any lock service, since a monotonic token has to come from somewhere. The framing that survives both is the one to say in the room: if the lock is an *efficiency* optimisation, one Redis key is enough; if it is a *correctness* mechanism, you want a lease from a consensus store plus a fencing check at the resource.
+That is the Redlock argument: a TTL lock on a majority of N independent Redis nodes. Kleppmann objects that its safety rests on wall-clock timing across machines that pause and clocks that jump, and that it issues no fencing token, while Antirez answers that it is safe under its stated model. Say which you need: *efficiency* or *correctness*.
 
 ### Failure detection: heartbeats, gossip, phi-accrual
 

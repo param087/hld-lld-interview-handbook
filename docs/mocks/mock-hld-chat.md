@@ -10,17 +10,17 @@ description: A 45-minute chat-system round in full — socket arithmetic, a regi
 
 > **Interviewer:** Design a messaging service like WhatsApp. One-to-one and group chats, delivered in real time when the recipient is online and on reconnect when they are not, with sent, delivered and read indicators. I care most about what happens between two people who are connected to different servers.
 
-That last sentence is the round's real prompt: the interviewer has told you where the marks are before you have drawn anything. Five rubric rows:
+That last sentence is the real prompt: the interviewer has said where the marks are before you have drawn anything. Five rubric rows:
 
 | Row | What earns the mark |
 |---|---|
-| Requirements and scope | Group size, multi-device and delivery guarantees pinned down, because each one multiplies the fan-out |
+| Requirements and scope | Group size, multi-device and delivery guarantees pinned down; each multiplies the fan-out |
 | Estimation | The socket count derived, not asserted, from the [latency and estimation tables](../cheatsheets/latency-and-estimation.md) |
 | High-level design | A stateful tier plus a way to find a user, both on the board by minute 24 |
 | Depth on the cruxes | Ordering, the registry, and delivery state, each with a number and a failure mode |
 | Communication and recovery | Taking a counter-example without arguing; following the interviewer's stated interest |
 
-The archetype is **real-time stateful**: the hard resource is open connections, not QPS, and the hard correctness property is order.
+The archetype is **real-time stateful**: the hard resource is open connections, not QPS; the hard property is order.
 
 ## Timeline
 
@@ -46,43 +46,43 @@ The archetype is **real-time stateful**: the hard resource is open connections, 
 
 > **Interviewer:** Both. Cap groups at 500 members. And two things you should know now: a user can have up to five devices, all of which must converge on the same history, and message bodies are end-to-end encrypted, so the server routes ciphertext.
 
-> **Candidate:** That is three constraints in one answer, and they all push the same way. Multi-device means my sessions are keyed per *device*, not per user, so the fan-out unit is a device. Encryption means the server keeps metadata only — conversation, sender, sequence, receipts — and that server-side search, link previews and content moderation are out. And it means push notifications carry no body. Second question: what does "never lost" mean here?
+> **Candidate:** Three constraints in one answer, all pushing the same way. Multi-device means sessions are keyed per *device*, not per user, so the fan-out unit is a device. Encryption means the server keeps metadata only — conversation, sender, sequence, receipts — so server-side search, link previews and moderation are out, and push carries no body. Second: what does "never lost" mean?
 
 > **Interviewer:** Once the sender sees a single tick, the message must survive anything. Duplicates must never be visible to the user.
 
-> **Candidate:** So durable before ack, and effectively-once at the user level: at-least-once delivery plus an idempotent consumer. Third: ordering — total order per conversation, or globally?
+> **Candidate:** So durable before ack, and effectively-once at the user level: at-least-once plus an idempotent consumer. Third: total order per conversation, or globally?
 
 > **Interviewer:** Per conversation. Nobody cares how two different chats interleave.
 
-> **Candidate:** Good, that is much cheaper. Fourth: latency target?
+> **Candidate:** Much cheaper. Fourth: latency target?
 
 > **Interviewer:** Under half a second p99 from tap to the other screen when both are online.
 
-> **Candidate:** Then, scope. Functional: send to a one-to-one or group conversation, deliver to every online device including the sender's others, deliver on reconnect, push when offline, sent/delivered/read, presence. Non-functional: 500 ms p99 delivery, 200 ms p99 for the sender's ack, replicated three ways before that ack, four nines on send and receive. Out of scope: calls, spam detection, search over history, the key-exchange protocol, media processing.
+> **Candidate:** Then, scope. Functional: send to a direct or group conversation, deliver to every online device including the sender's others, deliver on reconnect, push when offline, sent/delivered/read, presence. Non-functional: 500 ms p99 delivery, 200 ms p99 ack, replicated three ways before that ack, four nines on send and receive. Out of scope: calls, spam detection, search, the key-exchange protocol, media processing.
 
 ### Minutes 6-11: the number that shapes everything is not QPS
 
-> **Candidate:** 50 million daily active users at 40 messages a day is 2 billion messages a day. Over ten to the fifth seconds that is 23 thousand a second, about 70 thousand at a three-times peak. That is a small number — a single relational primary does 5 to 20 thousand writes a second, so 70 thousand is a handful of shards. Reads are the same order as writes, roughly one to one, so there is no feed to precompute and no read/write ratio to exploit. Which means the interesting resource is somewhere else.
+> **Candidate:** 50 million daily active users at 40 messages a day is 2 billion messages a day. Over ten to the fifth seconds that is 23 thousand a second, about 70 thousand at a three-times peak. That is small — a single relational primary does 5 to 20 thousand writes a second, so 70 thousand is a handful of shards. Reads are the same order as writes, so there is no feed to precompute and no ratio to exploit. The interesting resource is somewhere else.
 
 > **Candidate:** It is connections. If twenty percent of 50 million users are online at peak, that is **10 million concurrent WebSockets**, held open for hours. I will assume 100 thousand sockets per server — that is an assumption I would validate with a load test, and it depends on the memory per connection more than on CPU. Ten million over a hundred thousand is 100 servers, times 1.5 for headroom, so about 150.
 
 > **Interviewer:** Where does 100k come from?
 
-> **Candidate:** Experience rather than a table, which is why I flagged it. It is the number I would prove first, because the whole fleet size is linear in it: at 50 thousand per server I need 300 machines, at 200 thousand I need 75. The design does not change either way — the cost does.
+> **Candidate:** Experience rather than a table, which is why I flagged it. It is the number I would prove first, because fleet size is linear in it: at 50 thousand per server I need 300 machines, at 200 thousand I need 75. The design does not change — the cost does.
 
 > **Candidate:** Three more. Storage: 2 billion messages at about 100 bytes is 200 gigabytes a day, so 73 terabytes a year, 220 with three replicas. At 5 to 10 thousand writes a second per wide-column node and 70 thousand peak writes times three replicas — 210 thousand node-writes a second — that is 25 to 40 nodes. Session registry: 10 million sessions at roughly 100 bytes is about a gigabyte, which is nothing; but each send does about three registry lookups, so 70 thousand sends a second is 200 thousand lookups a second, and a Redis instance does about 100 thousand operations a second, so four shards. Bandwidth: 70 thousand frames a second at a kilobyte each is 70 megabytes a second in and roughly double that out — under a gigabit, never the bottleneck.
 
-> **Candidate:** So the headline is: **the state, not the throughput, is the problem.** Ten million sockets means users are pinned to specific machines, which means every sender needs a way to look up where a recipient is.
+> **Candidate:** The headline: **the state, not the throughput, is the problem.** Ten million sockets means users are pinned to machines, so every sender needs a way to look up where a recipient is.
 
 ### Minutes 11-15: frames and the partition key
 
-> **Candidate:** Messaging rides one WebSocket per device. On connect the client sends its bearer token, `device_id` and a map of last-synced sequence numbers. Over the socket: a `send` frame carrying `{conversation_id, client_msg_id, body}`, which is acked with `{client_msg_id, seq, sent_at}`; and `delivered` and `read` frames carrying `{conversation_id, up_to_seq}`. Everything not latency-critical is REST: `GET /v1/conversations/{id}/messages?after_seq=&limit=`, `POST /v1/conversations`, `POST /v1/devices` for the push token, and a presigned media upload.
+> **Candidate:** Messaging rides one WebSocket per device. On connect the client sends its token, `device_id` and a map of last-synced sequence numbers. Over the socket: a `send` frame of `{conversation_id, client_msg_id, body}`, acked with `{client_msg_id, seq, sent_at}`, plus `delivered` and `read` frames of `{conversation_id, up_to_seq}`. Everything not latency-critical is REST: `GET /v1/conversations/{id}/messages?after_seq=&limit=`, `POST /v1/conversations`, `POST /v1/devices`, and a presigned media upload.
 
 > **Interviewer:** Why is `seq` in every frame?
 
 > **Candidate:** So the client can detect its own gaps. If a device holds 41 and the next frame is 43, it knows 42 exists and asks for it rather than trusting the socket to have been reliable. It also makes every cursor in the API an integer: `after_seq`, `read_up_to_seq`, `last_synced_seq`.
 
-> **Candidate:** Data model: `MESSAGE` partitioned by `conversation_id` and clustered by `seq` descending, in a wide-column store. Every query the product asks — latest fifty, everything after N, everything before N — is one partition range scan, no joins, no secondary index. `client_msg_id` is stored alongside as the idempotency key. Memberships and conversations in a key-value store keyed by `conversation_id`, with a reverse index from user to conversations. Sessions in Redis, which is a cache and not a table.
+> **Candidate:** Data model: `MESSAGE` partitioned by `conversation_id`, clustered by `seq` descending, in a wide-column store. Every query the product asks — latest fifty, everything after N, everything before N — is one partition range scan, no joins. `client_msg_id` sits alongside as the idempotency key. Conversations and memberships in a key-value store keyed by `conversation_id`, with a reverse index from user to conversations. Sessions in Redis, a cache and not a table.
 
 ### Minutes 15-19: v1 on the board
 
@@ -105,7 +105,7 @@ flowchart LR
     s_chat --> s_ws
 ```
 
-> **Candidate:** One send: Ann's frame arrives on the server holding her socket, that server hands it to the chat service, which dedups on `(sender_id, client_msg_id)`, assigns a sequence number, writes one row with three replicas acknowledging, and acks Ann. Her tick appears after exactly one durable write, so the 200 millisecond budget is one store round trip. Then the service asks the registry where Bob's devices are and pushes the frame to those servers. Stickiness is free here — a WebSocket is one TCP stream, so an L4 balancer that assigns it once is all the affinity I need.
+> **Candidate:** One send: Ann's frame arrives on the server holding her socket, which hands it to the chat service; that dedups on `(sender_id, client_msg_id)`, assigns a sequence number, writes one row with three replicas acknowledging, and acks Ann. Her tick appears after exactly one durable write, so the 200 millisecond budget is one store round trip. Then the service asks the registry where Bob's devices are and pushes the frame to those servers. Stickiness is free — a WebSocket is one TCP stream, so an L4 balancer that assigns it once is all the affinity I need.
 
 ### Minutes 19-25: the wrong turn, broken by clock skew
 
@@ -117,21 +117,21 @@ flowchart LR
 
 > **Candidate:** Bob's reply gets the smaller timestamp, so both phones show the answer above the question — and worse, they might not even agree with each other, because a client that received the frames live could sort differently from one that resyncs from the store. Server time does not give a total order across servers. Let me take that back.
 
-> **Candidate:** The order has to come from a **single owner per conversation**. Each `conversation_id` maps to one sequencer — a shard of the chat service chosen by consistent hashing, or a Redis `INCR` on a per-conversation key in the simplest version — and that owner assigns a dense, monotonic `seq`. Dense matters: a global time-sortable id would also give a total order, but the ids are sparse, so a client that holds 41 and receives 4,829 cannot tell whether it missed anything. With a counter, "41 then 43" is a detectable gap.
+> **Candidate:** The order has to come from a **single owner per conversation**. Each `conversation_id` maps to one sequencer — a shard chosen by consistent hashing, or a Redis `INCR` on a per-conversation key in the simplest version — that assigns a dense, monotonic `seq`. Dense matters: a global time-sortable id also gives a total order, but sparsely, so a client holding 41 that receives 4,829 cannot tell whether it missed anything. With a counter, "41 then 43" is a detectable gap.
 
 > **Interviewer:** What if the sequencer is a hot spot?
 
-> **Candidate:** One counter per conversation is cheap, and conversations shard perfectly, so the hot case is a single very busy group rather than the fleet. At 500 members that is bounded. Above that I would stop pushing entirely and switch that conversation to fan-out on read, which I will come to. And I would keep a time-sortable global id as a secondary attribute for export and cross-conversation features — just never as the sort key.
+> **Candidate:** One counter per conversation is cheap and conversations shard perfectly, so the hot case is one very busy group, not the fleet. At 500 members that is bounded; above it I switch that conversation to fan-out on read, which I will come to. I would keep a time-sortable global id as a secondary attribute for export — just never as the sort key.
 
 ### Minutes 25-31: the registry, and a server dying with 100k sockets
 
-> **Candidate:** The registry is `HSET sessions:{user_id} {device_id} {server_id}`, written when a socket opens and deleted on a clean close. Every chat server subscribes to its own pub/sub channel; a router that wants to reach Bob looks up his devices, groups them by server, and publishes one envelope per server. No chat server ever talks to another chat server directly, which is what keeps 150 machines from becoming a mesh.
+> **Candidate:** The registry is `HSET sessions:{user_id} {device_id} {server_id}`, written when a socket opens and deleted on a clean close. Every chat server subscribes to its own pub/sub channel; a router reaching Bob looks up his devices, groups them by server, and publishes one envelope per server. No chat server talks to another directly, which keeps 150 machines from becoming a mesh.
 
 > **Interviewer:** A server dies with 100 thousand sockets. Walk me through the next sixty seconds.
 
-> **Candidate:** Nobody deletes 100 thousand hash fields, so the registry is stale for a while and that has to be safe. Two heartbeats make it safe. A ping and pong per socket every 30 seconds, so a server notices half-open connections — the phone that went into a tunnel and never sent a FIN. And a liveness key per server, refreshed every five seconds; when it expires, routers publishing to that channel find no subscriber, treat those users as offline, drop the session entries lazily and send a push instead. Meanwhile the clients see a dead socket and reconnect with jittered exponential backoff, land on other servers through the balancer, rewrite their registry entries, and sync with `after_seq`.
+> **Candidate:** Nobody deletes 100 thousand hash fields, so the registry is stale for a while and that has to be safe. Two heartbeats make it safe. A ping and pong per socket every 30 seconds, so a server notices half-open connections — the phone that went into a tunnel and never sent a FIN. And a liveness key per server, refreshed every five seconds; when it expires, routers publishing to that channel find no subscriber, treat those users as offline, drop the entries lazily and send a push. Meanwhile clients see a dead socket, reconnect with jittered backoff, land elsewhere through the balancer, rewrite their registry entries and sync with `after_seq`.
 
-> **Candidate:** Nothing is lost, because the socket was never the source of truth. The message store is. The registry is a **rebuildable cache**: if I lose all of Redis, the cost is one reconnect storm, which I absorb with the jitter and with a connection-rate cap at the balancer — not with a replicated database.
+> **Candidate:** Nothing is lost, because the socket was never the source of truth — the message store is. The registry is a **rebuildable cache**: losing all of Redis costs one reconnect storm, absorbed by the jitter and a connection-rate cap at the balancer, not by a replicated database.
 
 **Diagram v2 at minute 29: pub/sub per server, a log feeding push workers, presence and the REST path added.**
 
@@ -176,23 +176,23 @@ flowchart LR
 
 > **Interviewer:** Sent, delivered and read for 2 billion messages a day. That is a lot of receipt writes.
 
-> **Candidate:** It would be, if receipts were per-message events. They are **cursors**. A device sends `delivered {up_to_seq: 128}` once per batch, and read state is the conversation's `read_up_to_seq`. So the server writes one row per device per batch instead of one per message, and every question about a message becomes a comparison: is `seq <= up_to_seq`? For a group I store a delivered and a read counter per message rather than 500 rows, and the sender's indicator is the *weakest* state across members — one member who has not received it keeps the whole message at one tick.
+> **Candidate:** It would be, if receipts were per-message events. They are **cursors**. A device sends `delivered {up_to_seq: 128}` once per batch, and read state is the conversation's `read_up_to_seq`. The server writes one row per device per batch instead of one per message, and every question about a message becomes a comparison: is `seq <= up_to_seq`? For a group I store delivered and read counters per message rather than 500 rows, and the sender's indicator is the *weakest* state across members.
 
 > **Candidate:** The states are forward-only. A `delivered` ack that arrives after a `read` cursor must not regress the message to delivered; the update is a maximum, not an assignment. That single rule removes an entire class of flickering-tick bugs.
 
 > **Interviewer:** And offline users?
 
-> **Candidate:** No separate queue. I nearly drew one — a per-user inbox — and it is the wrong instinct, because it makes two sources of truth that can disagree. The message store already holds everything indexed by `seq`, so a returning device just asks for `after_seq`. The only extra machinery is a push notification to wake the device, sent by workers consuming the `message-stored` log for users the registry says have no live session. Collapse them per conversation — "3 new messages" — and, since bodies are encrypted, the push carries no content at all.
+> **Candidate:** No separate queue. I nearly drew one — a per-user inbox — and it is the wrong instinct: two sources of truth that can disagree. The store already holds everything indexed by `seq`, so a returning device asks for `after_seq`. The only extra machinery is a push to wake the device, sent by workers consuming the `message-stored` log for users the registry says have no live session. Collapse them per conversation — "3 new messages" — and, since bodies are encrypted, the push carries no content.
 
 ### Minutes 37-41: groups and presence
 
 > **Interviewer:** Now make it a group of 500.
 
-> **Candidate:** The message is still written **once**. What multiplies is delivery, and the unit of work is the server, not the socket: look up 500 members' sessions in one pipelined registry call, get back maybe 120 live devices spread over 40 servers, and publish 40 envelopes rather than 120. At 70 thousand messages a second, mostly one-to-one with groups averaging tens of online members, that lands around 150 thousand socket writes a second across the fleet and a few tens of thousands of publishes — inside one pub/sub shard's 100 thousand operations a second, with a second shard keyed by server id when it is not.
+> **Candidate:** The message is still written **once**. What multiplies is delivery, and the unit of work is the server, not the socket: look up 500 members' sessions in one pipelined registry call, get back maybe 120 live devices on 40 servers, publish 40 envelopes rather than 120. At 70 thousand messages a second, mostly direct with groups averaging tens of online members, that lands near 150 thousand socket writes a second and a few tens of thousands of publishes — inside one pub/sub shard's 100 thousand operations a second, with a second shard keyed by server id when it is not.
 
 > **Candidate:** Above 500 I would stop pushing. A 100 thousand-member channel becomes fan-out on read: store once, publish a tiny "new seq available" signal, let clients pull by `seq` when they open it, and turn per-member receipts into aggregate counters.
 
-> **Candidate:** Presence is the same problem with a worse ratio. One user with 300 contacts flipping online costs 300 deliveries, and a phone in a lift flips several times a minute. Three fixes: derive online state from the registry rather than a second heartbeat, debounce transitions with a 30-second grace period before publishing "offline", and fan out only to contacts who currently have the app open — whose servers the same registry already knows. "Last seen" is written lazily on disconnect.
+> **Candidate:** Presence is the same problem with a worse ratio: one user with 300 contacts flipping online costs 300 deliveries, and a phone in a lift flips several times a minute. Derive online state from the registry rather than a second heartbeat, debounce transitions with a 30-second grace period before publishing "offline", and fan out only to contacts who have the app open — whose servers the registry already knows. "Last seen" is written lazily on disconnect.
 
 **Diagram v3 at minute 40: sharded registry and pub/sub, sequencer shards backed by a partitioned log, message store sharded by conversation.**
 
@@ -230,13 +230,13 @@ flowchart LR
     s_route --> d_cache
 ```
 
-> **Candidate:** The one structural change is that the sequencer now appends to a log partition keyed by `conversation_id` with all replicas acknowledging, and acks the sender from the log rather than from the store. Ordering and durability become the same hop, the store and push workers become consumers, and a sequencer that dies rebuilds its counters from the tail of its partitions. Log lag then delays push notifications and history writes, never delivery to someone who is already online — worth saying out loud, because it is the reassuring answer to "what if Kafka backs up".
+> **Candidate:** The one structural change: the sequencer appends to a log partition keyed by `conversation_id` with all replicas acknowledging, and acks the sender from the log rather than the store. Ordering and durability become the same hop, the store and push workers become consumers, and a dead sequencer rebuilds its counters from the tail of its partitions. Log lag then delays push and history writes, never delivery to someone already online — worth saying out loud, because it answers "what if the log backs up".
 
 ### Minutes 41-45: shedding load, and one admission
 
 > **Interviewer:** You are over capacity. What do you shed?
 
-> **Candidate:** In this order: typing indicators first — fire-and-forget, at most one every three seconds, never stored. Then presence fan-out. Then read receipts, which can be batched harder or delayed. Never the message path. Beyond shedding: reconnect storms are capped at the balancer, stale registry entries degrade to "offline plus a push", and hot conversation partitions are bucketed as `(conversation_id, seq // 10_000)` so no partition grows without bound. Multi-region: a conversation is pinned to a home region where its sequencer lives, and members elsewhere pay one cross-region round trip on send — 70 to 150 milliseconds, which still fits inside the 500 millisecond budget.
+> **Candidate:** In order: typing indicators first — fire-and-forget, at most one every three seconds, never stored. Then presence fan-out. Then read receipts, batched harder or delayed. Never the message path. Beyond shedding: reconnect storms are capped at the balancer, stale registry entries degrade to "offline plus a push", and hot partitions are bucketed as `(conversation_id, seq // 10_000)` so none grows without bound. Multi-region: a conversation is pinned to a home region where its sequencer lives, and members elsewhere pay one cross-region round trip on send — 70 to 150 milliseconds, inside the 500 millisecond budget.
 
 > **Interviewer:** What did you get wrong today?
 
@@ -247,8 +247,8 @@ flowchart LR
 
 ## Artifacts
 
-- The full design with the transport comparison, the storage layout and the follow-up bank: [Design a chat system](../hld/case-studies/chat-messenger.md). The clock it follows: [The 45-minute HLD framework](../hld/fundamentals/interview-framework.md).
-- The runnable version is `code/hld/chat_router.py`: a session registry keyed per device, a pub/sub bus with one channel per server, and a chat service that dedups on `client_msg_id`, assigns `seq` under a lock, and routes outside it so one slow socket never delays the next sequence number.
+- The full design, with the transport comparison and the follow-up bank: [Design a chat system](../hld/case-studies/chat-messenger.md). The clock it follows: [The 45-minute HLD framework](../hld/fundamentals/interview-framework.md).
+- The runnable version is `code/hld/chat_router.py`: a registry keyed per device, a pub/sub bus with one channel per server, and a chat service that dedups on `client_msg_id`, assigns `seq` under a lock and routes outside it, so one slow socket never delays the next sequence number.
 - Reproduce from memory: the socket arithmetic, the registry key shape, and the three diagrams.
 
 ## Debrief
@@ -281,8 +281,8 @@ Hire at SDE2. The reservation on file is thin: the ordering turn cost roughly tw
 
 Do each alone, on a clock, out loud.
 
-1. **Slack, not WhatsApp.** Channels with up to 100 thousand members, threads, and full-text search over history — so no end-to-end encryption. Which parts of this design invert, and what does search cost you in the write path? Twenty minutes.
-2. **No servers you control.** Same product, but delivery must survive an entire region failing without losing a message or reordering a conversation. Where does the sequencer live, and what does a member in the failed region see? Fifteen minutes.
+1. **Slack, not WhatsApp.** Channels of up to 100 thousand members, threads, and full-text search over history — so no end-to-end encryption. Which parts of this design invert, and what does search cost in the write path? Twenty minutes.
+2. **Survive a region.** Same product, but delivery must survive a whole region failing without losing a message or reordering a conversation. Where does the sequencer live, and what does a member in the failed region see? Fifteen minutes.
 3. **One tenth the scale, ten times the guarantees.** 5 million daily active users, but every message must be legally retained for seven years and auditable. Redo the storage estimate and say what changes in the ack path. Fifteen minutes.
 
 ## Related

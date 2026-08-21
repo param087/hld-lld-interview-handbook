@@ -6,22 +6,22 @@ description: An always-writable, leaderless key-value store — consistent-hash 
 
 ## TL;DR
 
-- A Dynamo-style store is a **leaderless, partitioned, replicated hash table**: every key hashes to a position on a ring, lives on the next N distinct nodes (its preference list), and any of them can coordinate a read or a write. Availability wins over consistency: the store stays writable through node failures and partitions, and conflicts are resolved after the fact.
+- A Dynamo-style store is a **leaderless, partitioned, replicated hash table**: every key hashes to a ring position, lives on the next N distinct nodes (its preference list), and any of them can coordinate a request. Availability wins over consistency — the store stays writable through failures and partitions, and conflicts are resolved afterwards.
 - The cruxes an interviewer probes: (1) **consistent hashing with virtual nodes and preference lists**, (2) **tunable N/W/R quorums**, (3) **versioning** with vector clocks or last-writer-wins plus read repair, (4) **failure handling** with gossip, sloppy quorums, hinted handoff and Merkle anti-entropy, (5) the **node write path** from WAL to memtable to SSTable.
 - The design below serves 1B keys at 100k reads/s and 10k writes/s on ~30 commodity nodes, N=3, W=2, R=2, p99 read under 10 ms.
 
 ## Problem statement and clarifying questions
 
-"Design a key-value store in the style of Amazon Dynamo, Cassandra or Riak: `put(key, value)` and `get(key)` over opaque keys, horizontally scalable, and available for writes while nodes are down." The questions below decide the two biggest forks: whether the store is CP or AP under a partition, and whether conflict resolution belongs to the server or to the application.
+"Design a key-value store in the style of Amazon Dynamo, Cassandra or Riak: `put(key, value)` and `get(key)` over opaque keys, horizontally scalable, and available for writes while nodes are down." The answers decide two forks: CP or AP under a partition, and whether the server or the application resolves conflicts.
 
 | Question | Assumption taken |
 |---|---|
-| Availability or consistency under a partition? | Availability. A shopping cart must accept an "add item" during an outage; we reconcile afterwards. Consistency is tunable per request via W and R. |
+| Availability or consistency under a partition? | Availability: a cart must accept "add item" during an outage and reconcile later. Consistency is tunable per request via W and R. |
 | Value size and shape? | Opaque blobs, ~1 KB median, 1 MB maximum; no secondary indexes, no range scans. |
 | Scale? | 1B keys, 10B reads/day, 1B writes/day (a 10:1 read/write ratio). |
 | Latency target? | p99 read < 10 ms, p99 write < 20 ms inside one region. |
-| Durability? | A write acknowledged to the client is on at least two nodes' write-ahead logs; N=3 copies on distinct nodes, rack-aware. |
-| Who resolves conflicting writes? | The application merges concurrent versions (siblings). Last-writer-wins is allowed per keyspace where losing an update is acceptable. |
+| Durability? | An acknowledged write is on at least two nodes' write-ahead logs; N=3 copies on distinct, rack-aware nodes. |
+| Who resolves conflicting writes? | The application merges concurrent versions (siblings); last-writer-wins is opt-in per keyspace. |
 | Multi-datacenter? | Single region first; multi-region replication is a v2 step. |
 | Membership changes? | Explicit: an operator adds or removes nodes; failures are detected automatically. |
 | Transactions or multi-key operations? | No. Single-key operations only; a batch get is a convenience fan-out. |
@@ -33,12 +33,12 @@ description: An always-writable, leaderless key-value store — consistent-hash 
 - `put(key, value, context)` writes a value; `get(key)` returns every concurrent version plus an opaque context; `delete(key)` writes a tombstone.
 - Any replica of a key accepts reads and writes; there is no leader to wait for.
 - Per-request tunable consistency: the client chooses W and R within N.
-- Nodes can be added or removed without downtime; data rebalances automatically and only ~1/N of the keys move.
+- Nodes join or leave without downtime; only ~1/N of the keys move.
 
 ### Non-functional
 
 - Availability: 99.99% for writes ("always writable"), including with one node down or one rack partitioned away.
-- Latency: p99 read < 10 ms and write < 20 ms in-region. A same-datacenter round trip is ~500 µs, so a quorum costs one parallel round trip plus local disk work; the budget is spent on the slowest of the R or W replicas.
+- Latency: p99 read < 10 ms and write < 20 ms in-region.
 - Durability: N=3, W=2 by default; an acknowledged write has been appended and fsync-ed to two write-ahead logs.
 - Scale: 1B keys x 1 KB = 1 TB logical, 3 TB raw; 100k reads/s and 10k writes/s average, 3x at peak.
 - Consistency: eventual by default; W + R > N gives a reader the latest acknowledged write when every replica is reachable (sloppy quorums weaken this; deep dive 4).

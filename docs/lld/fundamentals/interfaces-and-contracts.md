@@ -77,7 +77,7 @@ Both collaborators are `Protocol`s sized to what the service calls - two methods
 --8<-- "code/fundamentals/contracts.py:protocols"
 ```
 
-Method names carry the promise. `reserve` says a hold is taken and can be released; `get` says the thing exists or you get an error; `page_for_sku` says you will not receive the whole table. Compare `process(data)`, which promises nothing and forces the reader into the body.
+Method names carry the promise. `reserve` says a hold is taken and can be released; `get` says the thing exists or you get an error; `page_for_sku` says you will not receive the whole table. Compare `process(data)`, which promises nothing.
 
 ### DTOs: commands in, views out
 
@@ -101,7 +101,7 @@ match service.reserve(command):
         offer_alternative(reason, available)
 ```
 
-`type ReservationResult = Reserved | Rejected` is the whole "result object" machinery Python needs; no `Either` library. `match` checks nothing at runtime, so close it with `case _ as other: assert_never(other)` and let the type checker fail the build when a third outcome arrives. Reach for exceptions when the failure must unwind several frames, and for results when the immediate caller has a decision to make.
+`type ReservationResult = Reserved | Rejected` is the whole "result object" machinery Python needs; no `Either` library. `match` checks nothing at runtime; close it with `case _ as other: assert_never(other)` so the type checker fails the build when a third outcome arrives. Reach for exceptions when the failure must unwind several frames, and for results when the immediate caller has a decision to make.
 
 ### Preconditions, postconditions and invariants
 
@@ -143,7 +143,7 @@ Bound the page size in the contract (`1..100` here) so a caller cannot ask for t
 
 ### From domain method to REST resource
 
-The mapping is mechanical once the service interface is right, which is the point: design the domain call first, then expose it. (`release` is the method this service would grow next.)
+The mapping is mechanical once the service interface is right: design the domain call first, then expose it. `release` is the method this service would grow next.
 
 | Service method | HTTP | Response |
 |---|---|---|
@@ -161,7 +161,7 @@ A published contract can only grow. Adding an optional field with a default is c
 --8<-- "code/fundamentals/contracts.py:versioning"
 ```
 
-Two habits make that easy. Omit unset optional fields from the payload rather than sending `null`, so a client written before `warehouse` existed receives byte-for-byte what it always received. And keep the view separate from the domain object, so adding an internal field to `StockItem` never leaks into a response. When a change really is breaking, it is a new resource version, not an edit - and the old one keeps working until its clients are gone.
+Two habits make that easy. Omit unset optional fields from the payload rather than sending `null`, so a client written before `warehouse` existed receives byte-for-byte what it always received. And keep the view separate from the domain object, so adding an internal field to `StockItem` never leaks into a response. When a change really is breaking, it is a new resource version, not an edit.
 
 Running `python -m fundamentals.contracts`:
 

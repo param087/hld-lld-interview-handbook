@@ -17,7 +17,7 @@ description: The stores that are not a relational database — object storage an
 
 An object store keeps immutable blobs in buckets under a flat namespace: the key `2026/08/report.pdf` contains slashes but there are no directories, so listing a prefix is a range scan of a sorted index, not a tree walk. Objects are written whole and replaced whole, which is what lets the system be so simple and so durable.
 
-Durability comes from redundancy, and the choice is replication or erasure coding. Three replicas cost 3x the bytes and survive two losses. Reed-Solomon RS(6,3) splits an object into 6 data and 3 parity chunks and rebuilds the object from any 6 of the 9: 1.5x the bytes and it survives three losses, so it beats replication on both counts — paid for with encode CPU and a reconstruct read (6 chunk fetches) whenever a chunk is missing. Erasure-code the cold bulk, replicate the small and hot: at 500k videos/day x 300 MB = 150 TB/day of ingest, that is 225 TB/day of disk instead of 450 TB/day.
+Durability comes from redundancy, and the choice is replication or erasure coding. Three replicas cost 3x the bytes and survive two losses. Reed-Solomon RS(6,3) splits an object into 6 data and 3 parity chunks: 9/6 = 1.5x the bytes and it survives three losses rather than two, paid for with encode CPU and a 6-chunk reconstruct read whenever one is missing. Erasure-code the cold bulk, replicate the small and hot: at 500k videos/day x 300 MB = 150 TB/day of ingest, that is 225 TB/day of disk instead of 450 TB/day.
 
 Three mechanics come up in every interview. **Multipart upload** splits a large object into parts uploaded in parallel and retried individually; a `complete` call lists the part numbers and ETags and the object appears atomically, so a 5 GB upload no longer restarts from zero. **Presigned URLs** let the client upload straight to the store over a time-limited signed link, keeping terabytes off your application servers. **Consistency** is metadata consistency: new keys are read-after-write consistent because the metadata write commits before the 200; listings and cross-region replication lag.
 
@@ -158,7 +158,7 @@ Phrases that signal depth: "the index is derived state, not the source of truth"
     Bytes go to object storage via a presigned multipart upload, so they never traverse the application tier. The database holds key, size, content hash, owner and status — small rows, fast backups, cheap replicas, durability delegated.
 
 ??? question "Replication or erasure coding?"
-    Replication for small, hot or latency-sensitive objects, where a read is one fetch. Erasure coding for cold bulk: RS(6,3) is 1.5x the bytes instead of 3x and tolerates three losses instead of two, paid for with encode CPU and reconstruct reads that touch six nodes instead of one.
+    Replication for small, hot or latency-sensitive objects, where a read is one fetch. Erasure coding for cold bulk: RS(6,3) is 1.5x the bytes instead of 3x and survives three losses rather than two, paid for with encode CPU and reconstruct reads.
 
 ??? question "Why is a distributed file system bad at small files?"
     The coordinator holds every chunk's metadata in memory, roughly 150 B per chunk, so a million tiny files cost as much metadata as a million chunks of one huge file while wasting the sequential design. Pack them into containers, or use object storage.

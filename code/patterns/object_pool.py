@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -28,6 +29,7 @@ from common import (
 )
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
+RECHECK_SECONDS = 0.05
 
 
 class PoolExhaustedError(HandbookError):
@@ -155,13 +157,7 @@ class ObjectPool[T]:
         if obj is None:
             obj = self._create_if_room()
         if obj is None:
-            wait = self._timeout if timeout is None else timeout
-            try:
-                obj = self._idle.get(timeout=wait)
-            except queue.Empty:
-                raise PoolExhaustedError(
-                    f"all {self._max_size} objects are in use (waited {wait} s)"
-                ) from None
+            obj = self._wait_for_object(self._timeout if timeout is None else timeout)
         if self._validate is not None and not self._validate(obj):
             obj = self._replace(obj)
         with self._lock:
@@ -224,10 +220,32 @@ class ObjectPool[T]:
         except queue.Empty:
             return None
 
+    def _wait_for_object(self, wait: float) -> T:
+        """Wait up to ``wait`` seconds for an object, then give up with a typed error.
+
+        A ``release`` wakes this immediately through the queue's condition variable.
+        The deadline is sliced because ``discard`` and a failed ``reset`` free a *slot*
+        without queueing an object: without the re-check a borrower already waiting
+        would block for the whole timeout while the pool sat empty.
+        """
+        deadline = time.monotonic() + wait
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PoolExhaustedError(
+                    f"all {self._max_size} objects are in use (waited {wait} s)"
+                )
+            try:
+                return self._idle.get(timeout=min(remaining, RECHECK_SECONDS))
+            except queue.Empty:
+                obj = self._create_if_room()
+                if obj is not None:
+                    return obj
+
     def _create_if_room(self) -> T | None:
         """Reserve a slot under the lock, then run the slow factory outside it."""
         with self._lock:
-            if self._created >= self._max_size:
+            if self._closed or self._created >= self._max_size:
                 return None
             self._created += 1
         try:

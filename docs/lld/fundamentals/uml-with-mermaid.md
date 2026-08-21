@@ -29,7 +29,7 @@ In a 45-minute round you draw two: a class diagram and one sequence diagram. Add
 
 ### Class diagrams: structure and the six relationships
 
-The class diagram is the deliverable. Four things make it readable: visibility markers, member types written the Mermaid way, annotations, and multiplicities on the relationships.
+The class diagram is the deliverable. Four things make it readable: visibility markers, Mermaid-style member types, annotations, and multiplicities.
 
 **Structure of the lending domain: what exists, what owns what, and how many.**
 
@@ -154,7 +154,7 @@ sequenceDiagram
     deactivate D
 ```
 
-`autonumber` on the first line numbers the messages, which lets you say "step 6 is where the lock is taken". `activate`/`deactivate` draw the lifeline bars that show how long a call occupies its participant; they must balance, and the shorthand `->>+` / `-->>-` does the same job in less typing. Four block types carry the logic: `alt/else/end` for mutually exclusive branches, `opt/end` for a branch that may not happen, `loop/end` for repetition, and `par/and/end` for work that happens concurrently:
+`autonumber` on the first line numbers the messages, so you can point at a step by number. `activate`/`deactivate` draw the lifeline bars that show how long a call occupies its participant; they must balance, and the shorthand `->>+` / `-->>-` does the same job in less typing. Four block types carry the logic: `alt/else/end` for mutually exclusive branches, `opt/end` for a branch that may not happen, `loop/end` for repetition, and `par/and/end` for work that happens concurrently:
 
 ```text
 par notify the member
@@ -306,7 +306,7 @@ Square brackets, angle brackets and pipes inside a class member are the most com
 
 Diagrams are how you take control of an LLD round. After the clarifying questions, say "let me put the entities on the board" and draw the class diagram from the nouns - that single move converts a vague prompt into a shared artefact you both point at for the next thirty minutes. Draw it in the order of [the LLD interview framework](../fundamentals/lld-interview-framework.md): classes and multiplicity first, then hang the interfaces off it, then one sequence diagram for the flow with the hardest concurrency.
 
-On a whiteboard you draw the same shapes by hand; in a shared editor you type the Mermaid. The discipline is identical: caption every diagram with the claim it makes, keep it under about twenty boxes, and leave arrows you cannot defend off the board. When the interviewer asks for a change, edit the diagram rather than describing the edit - re-drawing a multiplicity from `1..*` to `0..*` is the evidence they want. [Design a parking lot](../problems/parking-lot.md) shows the finished set for one problem; [The 45-minute HLD framework](../../hld/fundamentals/interview-framework.md) scales the same flowchart vocabulary to architecture.
+Whiteboard or shared editor, the discipline is identical: caption every diagram with the claim it makes, keep it under about twenty boxes, and leave arrows you cannot defend off the board. When the interviewer asks for a change, edit the diagram rather than describing the edit - re-drawing a multiplicity from `1..*` to `0..*` is the evidence they want. [Design a parking lot](../problems/parking-lot.md) shows the finished set for one problem; [The 45-minute HLD framework](../../hld/fundamentals/interview-framework.md) scales the same flowchart vocabulary to architecture.
 
 !!! tip "Interview tip"
     Caption every diagram with a sentence that makes a claim: "the floor owns the lock, so two gates on different floors never contend". A picture with a claim invites the interviewer to argue with your design, which is the conversation you want; a picture without one invites them to ask what it is for.

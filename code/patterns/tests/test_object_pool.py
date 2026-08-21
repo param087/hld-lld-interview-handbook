@@ -82,6 +82,49 @@ def test_a_waiting_borrower_is_woken_by_a_release_from_another_thread() -> None:
     assert got == [held] and pool.in_use == 1
 
 
+def test_a_waiting_borrower_is_served_when_discard_frees_a_slot() -> None:
+    """`discard` frees a slot without queueing an object; the waiter must still be served."""
+    factory, pool = make_pool(max_size=1)
+    broken = pool.acquire()
+    got: list[Connection] = []
+    started = threading.Event()
+
+    def waiter() -> None:
+        started.set()
+        got.append(pool.acquire(timeout=2.0))
+
+    thread = threading.Thread(target=waiter)
+    thread.start()
+    started.wait(timeout=2.0)
+    pool.discard(broken)  # slot free, idle queue still empty
+    thread.join(timeout=2.0)
+    assert [conn.conn_id for conn in got] == ["conn-2"]  # a replacement was opened, not a timeout
+    assert factory.opened == 2 and pool.size == 1
+
+
+def test_a_closed_pool_never_opens_a_replacement_for_a_waiting_borrower() -> None:
+    factory, pool = make_pool(max_size=1)
+    lent = pool.acquire()
+    outcome: list[str] = []
+    started = threading.Event()
+
+    def waiter() -> None:
+        started.set()
+        try:
+            outcome.append(pool.acquire(timeout=0.3).conn_id)
+        except PoolExhaustedError:
+            outcome.append("exhausted")
+
+    thread = threading.Thread(target=waiter)
+    thread.start()
+    started.wait(timeout=2.0)
+    pool.close()
+    pool.discard(lent)  # the slot is free, but the pool is closed: no replacement
+    thread.join(timeout=2.0)
+    assert outcome == ["exhausted"]
+    assert factory.opened == 1 and pool.size == 0
+
+
 def test_stale_idle_object_is_destroyed_and_replaced_within_the_cap() -> None:
     factory, pool = make_pool(max_size=1)
     stale = pool.acquire()

@@ -73,6 +73,7 @@ class ReadWriteLock:
     The condition's own lock guards ``_readers``, ``_writer`` and
     ``_waiting_writers``. A reader waits while a writer is active *or* queued,
     so readers cannot starve a writer; the mirror risk is the trade you accept.
+    Not reentrant: re-taking the read lock deadlocks once a writer has queued.
     """
 
     def __init__(self) -> None:

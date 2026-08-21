@@ -94,11 +94,12 @@ sequenceDiagram
     B->>Q: put Delivery(audit, event)
     B-->>P: 2 handlers matched
     deactivate B
-    Q-)W: get()
+    W->>Q: get() blocks until a delivery arrives
+    Q-->>W: Delivery(inventory, event)
     activate W
     W->>I: on_order_placed(event)
     I-->>W: stock reserved
-    W->>A: on_order_placed(event)
+    W->>A: audit(event)
     A-->>W: RuntimeError
     Note over W: on_error(handler, event, exc), then carry on
     W->>Q: task_done()
@@ -127,7 +128,7 @@ Five decisions to say out loud:
 - **Copy under the lock, call outside it.** A slow handler never blocks `subscribe`, and a handler may cancel itself mid-dispatch.
 - **The delivery policy belongs to the bus.** With `workers=0` handlers run inline, in subscription order, before `publish` returns. With `workers=1` each handler call becomes a `Delivery` on a `queue.Queue`, `publish` returns at once and one daemon thread drains in FIFO order, so events stay in publish order; more workers trade order for throughput, as partitions do.
 - **Error isolation is the contract.** `_deliver` catches everything, hands it to `on_error` and moves on: a failing audit handler cannot stop inventory from reserving or kill the worker.
-- **`join` and `close`.** `queue.join` blocks until every delivery is handled; `close` refuses new events, lets the workers drain, then sends one sentinel per worker.
+- **`join` and `close`.** `queue.join` blocks until every delivery is handled; `close` refuses new events, then queues one sentinel per worker *behind* the pending deliveries, so FIFO order drains them before any worker stops.
 
 The subscribers import `Event` and nothing else, and each guards its own state because a worker bus calls them off-thread:
 

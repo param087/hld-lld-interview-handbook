@@ -332,8 +332,8 @@ def main() -> None:
             closed_after = call
     stats = dead.stats()
     print(
-        f"\ntotal outage, {budget.max_tokens:.0f}-token budget, 100 calls: the throttle closed "
-        f"on call {closed_after}, at {budget.tokens:.0f} tokens left"
+        f"\ntotal outage, {budget.max_tokens:.0f}-token budget, 100 calls: the throttle closed on "
+        f"call {closed_after} at half full; {budget.tokens:.0f} tokens left after all 100 calls"
     )
     print(
         f"  {stats.attempts} attempts for {stats.calls} calls = {stats.amplification:.2f}x load "

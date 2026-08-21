@@ -89,7 +89,7 @@ The pool's public surface:
 Four decisions to say out loud:
 
 - **`queue.Queue` is the pool.** A thread-safe FIFO with a condition variable inside, so the blocking wait and the wake-up on `release` come for free; your own lock guards only `_created`, `_lent` and `_closed`.
-- **Every wait is bounded.** `acquire` uses the pool-wide `timeout` unless the caller passes one, then raises `PoolExhaustedError`: a leaked object becomes an error you can alarm on, not a hung service.
+- **Every wait is bounded.** `acquire` uses the pool-wide `timeout` unless the caller passes one, then raises `PoolExhaustedError`: a leaked object becomes an error you can alarm on, not a hung service. A `release` wakes a waiter through the queue; the waiter also re-checks the cap each slice of the deadline, because `discard` frees a *slot* without queueing an object.
 - **Health check on the way out, reset on the way in.** A connection dropped while idle fails `validate` on the next `acquire` and is replaced in the same slot; `reset` rolls back what the last borrower left open. Both are injected callables, so the pool never imports a driver.
 - **A double release is refused.** `_lent` maps `id(obj)` to the object itself, so the id cannot be recycled while it is out, and a second `release` raises instead of queueing one connection for two borrowers.
 
@@ -99,7 +99,7 @@ The slot accounting is where the thread-safety lives, and `ConnectionPool` binds
 --8<-- "code/patterns/object_pool.py:internals"
 ```
 
-`_create_if_room` reserves the slot under the lock and calls the factory outside it: two threads cannot both win the last slot, a slow handshake stalls no `release`, and a factory that raises gives the slot back. `close` drains the idle queue under the same lock, so a racing `release` either returns its object first or sees the flag and destroys it.
+`_create_if_room` reserves the slot under the lock and calls the factory outside it: two threads cannot both win the last slot, a slow handshake stalls no `release`, and a factory that raises gives the slot back. It also refuses to build for a closed pool, so `_wait_for_object` cannot open a connection nobody will take back. `close` drains the idle queue under the same lock, so a racing `release` either returns its object first or sees the flag and destroys it.
 
 Running `python -m patterns.object_pool` prints:
 
@@ -154,7 +154,7 @@ Draw the class diagram, then say "in Python I would start from a `queue.Queue` b
 - **`concurrent.futures.ThreadPoolExecutor` and `multiprocessing.Pool`** pool threads and child processes, the most expensive objects a process owns; `submit` is `acquire` with the work attached.
 - **urllib3 `HTTPConnectionPool`** (under `requests.Session`) keeps keep-alive sockets per host: `maxsize` is the cap, `block=True` the bounded wait.
 - **SQLAlchemy `QueuePool`** is this module with production edges: `max_overflow` for bursts, `pool_timeout` (30 s by default), `pool_pre_ping` as the health check, `pool_recycle` to retire old connections, rollback on return as the reset.
-- **Database-side poolers** (PgBouncer, RDS Proxy) move the pool out of the process, so 50 app servers x 20 connections do not become 1,000 server-side connections.
+- **Database-side poolers** (PgBouncer, RDS Proxy) move the pool out of the process: 50 app servers x 20 connections need not become 1,000 server-side connections.
 
 ## Related patterns and confusions
 
@@ -163,8 +163,6 @@ Draw the class diagram, then say "in Python I would start from a `queue.Queue` b
 | **Singleton** | One shared instance versus N interchangeable ones lent exclusively. The pool is usually one per process: build it in the composition root and inject it rather than reach for `ConnectionPool.instance()`. |
 | **Flyweight** | Immutable and shared by everyone at once; a pooled object is mutable and owned by one borrower at a time, hence `release` and `reset`. |
 | **Cache** | Keyed, may miss, evicts under pressure. A pool has no key, waits instead of missing, and destroys objects only when they break or at `close()`. |
-| **Factory Method** | The pool *uses* a factory and calls it at most `max_size` times; a factory alone builds a new object per call. |
-| **Semaphore, bulkhead** | `BoundedSemaphore(n)` is a pool of permits with nothing attached: enough when you only need the cap. |
 | **Producer-consumer** | Same `queue.Queue`, opposite direction: a consumed item is gone, a borrowed one comes back. |
 
 ## Where it appears in LLD problems

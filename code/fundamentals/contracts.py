@@ -116,7 +116,7 @@ class StockItem:
 
 
 # --8<-- [start:pagination]
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Page[T]:
     """A page is a value: the items plus the cursor that resumes after the last one.
 

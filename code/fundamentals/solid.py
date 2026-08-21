@@ -268,7 +268,8 @@ def total_area(shapes: Iterable[Shape]) -> int:
 # --8<-- [start:isp_before]
 class PaymentGatewayBefore(ABC):
     """Five abstract methods, so every implementation must supply five, and the cash
-    drawer grows ``refund``, ``subscribe`` and ``tokenize`` stubs that raise.
+    drawer grows ``refund``, ``subscribe``, ``tokenize`` and ``settlement_report``
+    stubs that raise.
     """
 
     @abstractmethod
