@@ -138,22 +138,38 @@ nav:
           - Transactions, 2PC, sagas and idempotency: hld/fundamentals/transactions-and-distributed-transactions.md
           - CAP, PACELC and consistency models: hld/fundamentals/cap-pacelc-and-consistency-models.md
           - Messaging, queues and Kafka internals: hld/fundamentals/messaging-and-event-streaming.md
+          - Consensus and coordination: hld/fundamentals/consensus-and-coordination.md
           - Probabilistic data structures: hld/fundamentals/probabilistic-data-structures.md
           - Rate limiting: hld/fundamentals/rate-limiting.md
+          - Resilience patterns: hld/fundamentals/resilience-patterns.md
           - Monolith, microservices, CQRS and event sourcing: hld/fundamentals/microservices-and-architecture-styles.md
+          - Object, file, search, time-series and graph storage: hld/fundamentals/storage-systems-zoo.md
           - Security essentials: hld/fundamentals/security-essentials.md
           - Observability, SLOs and error budgets: hld/fundamentals/observability-and-slos.md
           - Geospatial indexing: hld/fundamentals/geospatial-indexing.md
       - Case studies:
           - hld/case-studies/index.md
+          - Design a URL shortener: hld/case-studies/url-shortener.md
           - Design a Dynamo-style key-value store: hld/case-studies/key-value-store.md
           - Design a distributed unique ID generator: hld/case-studies/unique-id-generator.md
           - Design a news feed: hld/case-studies/news-feed.md
           - Design a chat system: hld/case-studies/chat-messenger.md
+          - Design Uber (with a DoorDash variant): hld/case-studies/ride-sharing.md
+          - Design Ticketmaster (with a hotel-booking variant): hld/case-studies/ticketing-and-reservations.md
+          - Design Nearby Friends: hld/case-studies/nearby-friends.md
+          - Design a payment system and digital wallet: hld/case-studies/payment-system.md
+          - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
+          - Design Google Docs: hld/case-studies/collaborative-editor.md
   - LLD:
       - lld/index.md
       - Fundamentals:
           - lld/fundamentals/index.md
+          - Object-oriented Python for interviews: lld/fundamentals/oop-in-python.md
+          - SOLID in Python: lld/fundamentals/solid-principles.md
+          - DRY, KISS, YAGNI, Demeter, GRASP and cohesion: lld/fundamentals/design-principles-beyond-solid.md
+          - UML with Mermaid: lld/fundamentals/uml-with-mermaid.md
+          - The LLD interview framework: lld/fundamentals/lld-interview-framework.md
+          - Interfaces, contracts and service APIs in LLD: lld/fundamentals/interfaces-and-contracts.md
       - Design patterns:
           - lld/patterns/index.md
           - Design patterns overview: lld/patterns/patterns-overview.md
@@ -161,12 +177,14 @@ nav:
           - Factory Method: lld/patterns/factory-method.md
           - Abstract Factory: lld/patterns/abstract-factory.md
           - Builder: lld/patterns/builder.md
+          - Prototype: lld/patterns/prototype.md
           - Adapter: lld/patterns/adapter.md
           - Bridge: lld/patterns/bridge.md
           - Composite: lld/patterns/composite.md
           - Decorator: lld/patterns/decorator.md
           - Facade: lld/patterns/facade.md
           - Flyweight: lld/patterns/flyweight.md
+          - Proxy: lld/patterns/proxy.md
           - Chain of Responsibility: lld/patterns/chain-of-responsibility.md
           - Command: lld/patterns/command.md
           - Interpreter: lld/patterns/interpreter.md
