@@ -318,7 +318,7 @@ The second differentiator is temporal. `is_takeable` was written *before* the sw
 
 ## Practice variants
 
-Run each on a 45-minute timer, out loud, in an editor. Compare your *order of writing* against the twelve steps above, not only your class list.
+Run each on a 45-minute timer, out loud, in an editor. Compare your *order of writing* against the twelve steps above, not your class list.
 
 1. **Hotel rooms over date ranges.** A booking spans nights, not seats, so the contended unit is a room-plus-interval and two requests conflict when their ranges overlap. Sorted acquisition still works, but on what key? Decide between locking per room and per room-night, and say what changes about all-or-nothing.
 
@@ -328,9 +328,9 @@ Run each on a 45-minute timer, out loud, in an editor. Compare your *order of wr
 
 ## Related
 
-- [Design a movie ticket booking system (BookMyShow)](../lld/problems/movie-ticket-booking.md) — the same design as a reference write-up, with the full code
+- [Design a movie ticket booking system (BookMyShow)](../lld/problems/movie-ticket-booking.md) — the same design as a reference write-up
 - [Design Ticketmaster (with a hotel-booking variant)](../hld/case-studies/ticketing-and-reservations.md) — the distributed version, where the waiting room lives
 - [The LLD interview framework](../lld/fundamentals/lld-interview-framework.md) — the process this transcript follows
 - [State](../lld/patterns/state.md) — the transition table behind `Booking` and `ShowSeat`
 - [Strategy](../lld/patterns/strategy.md) — the pricing and refund seams
-- [Concurrency for LLD in Python](../lld/fundamentals/concurrency-for-lld.md) — lock ordering, granularity and optimistic retries
+- [Concurrency for LLD in Python](../lld/fundamentals/concurrency-for-lld.md) — lock ordering and granularity

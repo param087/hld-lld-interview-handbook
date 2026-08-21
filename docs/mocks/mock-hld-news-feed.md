@@ -10,7 +10,7 @@ description: A full 45-minute news-feed round as it actually sounds — clarific
 
 > **Interviewer:** Design the home timeline for a social network. Users follow other users, publish posts — text and sometimes images — and open the app to see posts from the people they follow. The product exists; you are designing the backend that serves it. Take as long as you need on requirements, but I would like a diagram before we are halfway through.
 
-Five rubric rows, filled in silently while you talk:
+Five rubric rows, filled in silently:
 
 | Row | What earns the mark |
 |---|---|
@@ -20,7 +20,7 @@ Five rubric rows, filled in silently while you talk:
 | Depth on the cruxes | Two or three decisions: options, the separating number, a pick, a failure mode |
 | Communication and recovery | Driving the room, conceding cleanly under pushback, keeping the clock |
 
-The archetype is **read-heavy fan-out**: reads dwarf writes and the failures come from skew.
+The archetype is **read-heavy fan-out**: reads dwarf writes, failures come from skew.
 
 ## Timeline
 
@@ -268,7 +268,7 @@ flowchart LR
 
 - The design in full, with the estimation table, store choices and the follow-up bank: [Design a news feed](../hld/case-studies/news-feed.md). The pacing it follows: [The 45-minute HLD framework](../hld/fundamentals/interview-framework.md).
 - The code behind the fan-out deep dive is `code/hld/fanout.py`: `post()` pushes or records depending on the author's follower count, `get_feed()` merges pushed and pulled sources with `heapq.merge` and filters tombstones, and the cursor helpers implement the opaque `(created_at, post_id)` cursor from minute 12.
-- Board artifacts to reproduce from memory: the requirements list, the estimation table, and the three diagrams.
+- Reproduce from memory: the requirements list, the estimation table, the three diagrams.
 
 ## Debrief
 

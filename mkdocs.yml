@@ -254,12 +254,14 @@ nav:
           - Design Uber (LLD) with driver matching: lld/problems/ride-sharing-lld.md
           - Design Stack Overflow: lld/problems/stack-overflow.md
           - Design Cricinfo (live scoreboard): lld/problems/cricinfo.md
+          - Design a meeting scheduler and calendar: lld/problems/meeting-scheduler.md
           - Design a traffic signal controller: lld/problems/traffic-signal.md
           - Design a text editor with undo and redo: lld/problems/text-editor.md
           - Design an in-memory file system: lld/problems/in-memory-file-system.md
           - Design LinkedIn (social network): lld/problems/linkedin.md
           - Design a task scheduler (cron, LLD): lld/problems/task-scheduler.md
           - Design a payment gateway and digital wallet: lld/problems/payment-gateway-wallet.md
+          - Design a notification service (LLD): lld/problems/notification-service.md
           - Design an online auction: lld/problems/online-auction.md
           - Design a restaurant management system: lld/problems/restaurant-management.md
           - Design an in-memory key-value store with transactions: lld/problems/kv-store-transactions.md
@@ -280,6 +282,7 @@ nav:
   - Mock interviews:
       - mocks/index.md
       - "Mock HLD interview: news feed": mocks/mock-hld-news-feed.md
+      - "Mock HLD interview: chat system": mocks/mock-hld-chat.md
       - "Mock LLD interview: parking lot": mocks/mock-lld-parking-lot.md
       - "Mock LLD interview: elevator system": mocks/mock-lld-elevator.md
       - "Mock LLD interview: movie ticket booking": mocks/mock-lld-movie-ticket-booking.md
