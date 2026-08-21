@@ -178,6 +178,7 @@ nav:
           - Design Amazon (e-commerce with inventory and flash sales): hld/case-studies/ecommerce-platform.md
           - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
           - Design Gmail: hld/case-studies/email-service.md
+          - Design a stock exchange: hld/case-studies/stock-exchange.md
   - LLD:
       - lld/index.md
       - Fundamentals:
@@ -246,6 +247,7 @@ nav:
           - Design Stack Overflow: lld/problems/stack-overflow.md
           - Design a traffic signal controller: lld/problems/traffic-signal.md
           - Design a task scheduler (cron, LLD): lld/problems/task-scheduler.md
+          - Design a payment gateway and digital wallet: lld/problems/payment-gateway-wallet.md
           - Design a restaurant management system: lld/problems/restaurant-management.md
           - Design an in-memory key-value store with transactions: lld/problems/kv-store-transactions.md
   - Cheatsheets:
