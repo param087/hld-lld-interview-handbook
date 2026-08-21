@@ -128,6 +128,7 @@ nav:
           - Back-of-envelope estimation: hld/fundamentals/estimation.md
           - From one server to millions of users: hld/fundamentals/scaling-primer.md
           - Networking for system design: hld/fundamentals/networking-essentials.md
+          - API design for HLD rounds: hld/fundamentals/api-design.md
           - Load balancing, reverse proxies and API gateways: hld/fundamentals/load-balancing-and-api-gateway.md
           - Caching and CDNs: hld/fundamentals/caching-and-cdn.md
           - Choosing a database: hld/fundamentals/databases-sql-vs-nosql.md
@@ -139,11 +140,16 @@ nav:
           - Messaging, queues and Kafka internals: hld/fundamentals/messaging-and-event-streaming.md
           - Probabilistic data structures: hld/fundamentals/probabilistic-data-structures.md
           - Rate limiting: hld/fundamentals/rate-limiting.md
+          - Monolith, microservices, CQRS and event sourcing: hld/fundamentals/microservices-and-architecture-styles.md
           - Security essentials: hld/fundamentals/security-essentials.md
           - Observability, SLOs and error budgets: hld/fundamentals/observability-and-slos.md
+          - Geospatial indexing: hld/fundamentals/geospatial-indexing.md
       - Case studies:
           - hld/case-studies/index.md
+          - Design a Dynamo-style key-value store: hld/case-studies/key-value-store.md
+          - Design a distributed unique ID generator: hld/case-studies/unique-id-generator.md
           - Design a news feed: hld/case-studies/news-feed.md
+          - Design a chat system: hld/case-studies/chat-messenger.md
   - LLD:
       - lld/index.md
       - Fundamentals:
@@ -154,6 +160,7 @@ nav:
           - Singleton: lld/patterns/singleton.md
           - Factory Method: lld/patterns/factory-method.md
           - Abstract Factory: lld/patterns/abstract-factory.md
+          - Builder: lld/patterns/builder.md
           - Adapter: lld/patterns/adapter.md
           - Bridge: lld/patterns/bridge.md
           - Composite: lld/patterns/composite.md
