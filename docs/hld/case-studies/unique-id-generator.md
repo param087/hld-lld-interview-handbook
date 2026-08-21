@@ -218,13 +218,13 @@ The layout is a budget you spend deliberately:
 
 The dials to mention: 8,000 workers takes 3 bits from the sequence (13 machine bits, and 512/ms is still 500k/s per worker); Instagram mints inside each Postgres shard with 41/13/10, so an id also names the shard; a second-resolution timestamp buys 1,000x the lifetime at the cost of ordering granularity.
 
-The arithmetic lives in `Layout` — `compose` and `decompose` are the shifts an interviewer will ask you to write on the board:
+`compose` and `decompose` are the shifts an interviewer will ask you to write on the board:
 
 ```python title="code/hld/snowflake.py — the bit layout"
 --8<-- "code/hld/snowflake.py:layout"
 ```
 
-The custom epoch is a constant baked into every worker and stored in `ID_LAYOUT`. Changing it changes the meaning of every existing id, so you version the layout and never reinterpret old ids.
+The custom epoch is a constant baked into every worker and stored in `ID_LAYOUT`; changing it changes the meaning of every existing id, so version the layout and never reinterpret old ids.
 
 ## Deep dive: UUID vs auto-increment vs ticket server vs Snowflake
 
@@ -282,7 +282,7 @@ lease expiry: worker-a renewed, worker-b did not; after 31 s machine 1 is held b
 worker-b renew -> InvalidStateError: worker-b no longer holds machine id 1; stop minting
 ```
 
-The layer the code does not show is **restarts**: the logical clock lives in memory, so a process that crashes and restarts after a backwards step starts from the wall clock again. Persist the highest timestamp minted (once a second is enough) and refuse to start until the wall clock passes it. Twitter's original implementation also compared clocks with its peers at start-up and refused to join if it was too far off.
+The layer the code does not show is **restarts**: the logical clock lives in memory, so a process that restarts after a backwards step starts from the wall clock again. Persist the highest timestamp minted (once a second is enough) and refuse to start until the wall clock passes it. Twitter's implementation also compared clocks with its peers at start-up and refused to join if it was too far off.
 
 ## Deep dive: machine-id assignment and sequence overflow
 
@@ -295,7 +295,7 @@ Two live workers sharing a machine id produce duplicates the moment their clocks
 | Lease from ZooKeeper or etcd | exactly-one-holder by construction; reclaimed on crash | a start-up dependency; needs fencing on lease loss |
 | Row in a database | familiar | a crashed worker never releases its row without a reaper |
 
-The lease wins: the registry is consensus-backed, the ephemeral node vanishes with the session, and the id returns to the pool. The safety rule is the one every lease has — **a worker that cannot renew must stop minting before the lease expires**, because the next owner may appear the instant it does. Lease length is the dial between riding out a registry outage and blocking a dead worker's id.
+The lease wins: the registry is consensus-backed, the ephemeral node vanishes with the session, and the id returns to the pool. The safety rule is every lease's rule — **a worker that cannot renew must stop minting before the lease expires**, because the next owner may appear the instant it does. Lease length trades riding out a registry outage against blocking a dead worker's id.
 
 **Registration: lowest free id, ephemeral node, heartbeat, and what happens on a lost race.**
 
@@ -376,13 +376,13 @@ flowchart LR
 
 What breaks first, and what you do about it:
 
-- **A hot worker saturating 4,096/ms**: the drift budget fills, `ClockDriftError` fires, and the alert tells you to spread minting. This is the only throughput limit in the system, and it is per process, so it scales with the fleet.
-- **Registry outage**: existing workers keep minting until their leases expire (5-10 minute leases, 10 s renewals); new workers cannot register and fall back to database ranges. An ensemble per datacenter keeps the blast radius local.
+- **A hot worker saturating 4,096/ms**: the drift budget fills, `ClockDriftError` fires, and the alert says to spread minting. It is the only throughput limit here, and it is per process, so it scales with the fleet.
+- **Registry outage**: existing workers mint until their leases expire (5-10 minute leases, 10 s renewals); new workers cannot register and fall back to database ranges. An ensemble per datacenter keeps the blast radius local.
 - **Clock step on one worker**: absorbed up to `max_drift_ms`, beyond which the worker refuses to mint and is drained. Monitor `borrowed_ms` and the wall-versus-logical gap as first-class metrics.
 - **Time-sorted keys create a hot partition** in range-partitioned stores, since every insert lands in the newest range. Hash the id for partition choice and keep time order inside the partition ([partitioning](../fundamentals/partitioning-and-consistent-hashing.md)).
-- **Cross-datacenter ordering**: ids from two regions interleave within their clock skew. True order for a stream needs a single sequencer — the consensus conversation.
-- **Precision loss in clients**: a 64-bit id in a JSON number silently rounds in JavaScript; every API returns ids as strings.
-- **Lifetime**: a 2024 epoch lasts into the 2090s; an alert at "80% of the timestamp range used" is cheap insurance.
+- **Cross-datacenter ordering**: ids from two regions interleave within their clock skew; true order for a stream needs a single sequencer.
+- **Precision loss in clients**: a 64-bit id in a JSON number silently rounds in JavaScript, so every API returns ids as strings.
+- **Lifetime**: a 2024 epoch lasts into the 2090s; an alert at 80% of the timestamp range is cheap insurance.
 
 ## Trade-offs summary
 

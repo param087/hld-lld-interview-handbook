@@ -310,6 +310,10 @@ The base design uses the **conditional decrement plus a reservation with a TTL**
 --8<-- "code/hld/inventory_reservation.py:inventory"
 ```
 
+Two details inside `reserve` decide whether that idempotency key helps or hurts. The lazy sweep runs **before** the key is consulted, so a hold whose TTL lapsed but which no sweeper has reached yet is expired rather than mistaken for a live one. And only a **held or committed** reservation counts as a retry: a saga that compensated leaves its reservation `released`, and handing that dead hold back to a retried checkout would give the caller units it no longer owns and a commit that can only fail. A retry after a compensation must take a fresh hold, or fail honestly because the stock has gone.
+
+The reservation also records the stock `versions` it was taken against. That is an **audit record**, carried on the reserve event and deliberately never re-read at commit time: a held reservation's units are already out of `available`, so nobody else could have taken them and there is nothing to compare against. A [seat hold](ticketing-and-reservations.md) does re-check its versions, because its seats become takeable the moment its TTL lapses — the difference is worth naming out loud, since an interviewer will ask why one checks and the other does not.
+
 **Flash sales** break the base design, and the arithmetic says why: a row held for a ~500 µs round trip sustains roughly 2k updates/s, while a drop brings 100k attempts/s. Application scaling cannot help, because the contention is one row. Shard the counter into 64 buckets, each its own key or row, and route buyers by hashing their id. The only cost is that "sold out" needs a walk over the shards instead of one read:
 
 ```python title="code/hld/inventory_reservation.py — sharded flash-sale counter"
@@ -372,7 +376,7 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-Running the module walks the whole flow: an all-or-nothing reservation, an idempotent retry, a stale-version rejection, a lazily reclaimed expiry, a completed saga, a compensated one, and a sharded flash sale.
+Running the module walks the whole flow: an all-or-nothing reservation, an idempotent retry, a stale-version rejection, a lazily reclaimed expiry, a retry after a compensation that takes a fresh hold rather than the released one, a completed saga, a compensated one, and a sharded flash sale.
 
 ```text
 ord-1 reserves 2 tshirt + 1 mug   -> rsv-1, available {'tshirt': (3, 2), 'mug': (1, 1), 'poster': (10, 0)}
@@ -381,6 +385,7 @@ ord-2 wants 2 mugs, 1 is free     -> rejected: insufficient stock for ['mug'] (a
 ord-2 reserves on a stale read    -> rejected: stale stock version for ['poster']; re-read and retry
 900 s pass, ord-3 takes the units -> rsv-2; ord-1 expired lazily
 ord-1 pays late, commit           -> rejected: reservation rsv-1 is expired: refund and re-offer
+saga compensated ord-3, retried   -> rsv-3, a fresh hold, not the released rsv-2
 checkout ord-4 (3 posters)        -> saga completed, posters left 12
   outbox relayed                  -> ['inventory-reserved', 'payment-captured', 'inventory-committed', 'shipment-created']
 checkout ord-9, card declined     -> saga compensated, posters back to 12
@@ -468,7 +473,7 @@ What breaks first, and what you do about it:
     Admission tokens issued before any inventory code runs, per-user and per-instrument caps checked before the counter decrements, fingerprinting at the edge, and post-purchase cancellation of mass buys.
 
 ??? question "Where do idempotency keys actually matter here?"
-    Three places: `POST /v1/orders`, so a retried checkout makes one order; the reservation keyed by `order_id`, so a retried step does not reserve twice; and the capture keyed by `order_id`, so a retry does not charge twice. Cart writes need no key: they are idempotent by shape.
+    Three places: `POST /v1/orders`, so a retried checkout makes one order; the reservation keyed by `order_id`, so a retried step does not reserve twice while its hold is live — a retry after a compensation takes a fresh hold; and the capture keyed by `order_id`, so a retry does not charge twice. Cart writes need no key: they are idempotent by shape.
 
 ??? question "How would you add price and promotion changes safely?"
     Price is resolved at checkout from the catalog, never from the cart, and copied into the order line. The order then holds immutable evidence of what was agreed, and a promotion expiring mid-checkout produces a repricing prompt rather than a silent difference.

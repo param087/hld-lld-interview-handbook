@@ -270,7 +270,7 @@ The probing question is "a judge worker is OOM-killed halfway through a submissi
 |---|---|---|
 | In-process thread pool | Submission lost with the process | Fine for a prototype, indefensible in an interview |
 | Fire-and-forget topic | Message acknowledged on receipt, then lost | The user's submission is stuck in "Judging" forever |
-| Leased queue (claim, lease, complete) | Lease expires, another worker claims it | Chosen: at-least-once with a bounded attempt count |
+| Leased queue with fencing tokens | Lease expires, another worker claims it under a new token | Chosen: at-least-once with a bounded attempt count |
 
 The queue hands out **leases**: a worker claims a submission, gets exclusive ownership for a lease window, and completes it. If the worker dies, the lease expires and the submission returns to the ready list. After a bounded number of attempts it becomes a dead letter with the `Internal Error` verdict and a page for an engineer — because the alternative, a submission that a poisonous input crashes forever, silently consumes the fleet.
 
