@@ -221,6 +221,7 @@ nav:
       - Problems:
           - lld/problems/index.md
           - Design a parking lot: lld/problems/parking-lot.md
+          - Design an elevator system: lld/problems/elevator-system.md
           - Design an in-memory cache (LRU, LFU, TTL): lld/problems/in-memory-cache.md
           - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
   - Cheatsheets:
