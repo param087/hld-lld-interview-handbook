@@ -291,15 +291,15 @@ The probing question is "a node dies mid-afternoon; walk me through the next hou
 
 | Mechanism | Detects or fixes | Time scale | Cost |
 |---|---|---|---|
-| Gossip + failure detector | Who is up, who owns which tokens | Seconds | O(log N) rounds to converge, a few messages per node per second |
+| Gossip + failure detector | Who is up, who owns which tokens | Seconds | O(log N) rounds, a few messages per node per second |
 | Sloppy quorum | Keeps writes flowing while a home replica is down | Immediate | Writes land on a stand-in outside the preference list |
-| Hinted handoff | Returns stand-in writes to the home replica | Minutes, when the node returns | Hint storage on the stand-in; bounded by a hint TTL |
+| Hinted handoff | Returns stand-in writes to the home replica | Minutes, on the node's return | Hint storage on the stand-in, bounded by a TTL |
 | Read repair | Stale replicas of hot keys | On the next read | One extra write per stale answer |
-| Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hash comparisons proportional to the differences, not to the data |
+| Merkle anti-entropy | Cold keys whose hints were lost or expired | Hours, scheduled | Hashes compared in proportion to differences, not data |
 
-The sequence is this. **Gossip** spreads membership and liveness: each node exchanges its view with a random peer, and a silent node is marked suspect locally rather than removed from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes instead to the **next healthy node past the preference list** (E), which stores the version plus a **hint** naming D — the write still reaches W nodes, so the client is never refused. That **sloppy quorum** is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E streams the hinted versions to D and drops its copy (**hinted handoff**); if E dies first the hint is lost, and the scheduled **anti-entropy** job compares Merkle trees of the range A and D share, descending only into subtrees whose hashes differ. The demo finds one lost update among 200 keys with 13 hash comparisons.
+**Gossip** spreads membership and liveness: each node exchanges its view with a random peer, and a silent node is marked suspect locally rather than dropped from the ring, because a transient failure must not trigger a rebalance. A coordinator that finds home replica D down writes to the **next healthy node past the preference list** (E), which keeps the version plus a **hint** naming D; the write still reaches W nodes, so the client is never refused — that **sloppy quorum** is why the deep dive 2 guarantee weakens under failure. When gossip reports D back, E streams the hinted versions over and drops its copy (**hinted handoff**). If E dies first the hint is lost, and the scheduled **anti-entropy** job compares Merkle trees of the range A and D share, descending only into subtrees whose hashes differ: in the demo one lost update among 200 keys is found in 13 hash comparisons.
 
-The cluster class ties the pieces together: `put` resolves home replicas to healthy holders, stamps the clock, and records hints; `recover` hands them off; `anti_entropy` repairs what the hints missed:
+The cluster class ties it together: `put` resolves home replicas to healthy holders, stamps the clock and records hints; `recover` hands them off; `anti_entropy` repairs what the hints missed:
 
 ```python title="code/hld/kv_cluster.py — the cluster"
 --8<-- "code/hld/kv_cluster.py:cluster"
@@ -350,9 +350,9 @@ flowchart LR
     n_bloom -->|"yes"| n_ln
 ```
 
-The write is acknowledged as soon as the WAL append is durable — one sequential write, no seek — so a replica write costs microseconds of CPU plus the fsync. The memtable is sorted in memory (a skip list in RocksDB), so a flush streams entries in key order; flushed SSTables are immutable, which is why readers need no locks and why a whole table can be shipped when a node streams a range to a new member. Reads check the memtable, then each SSTable's Bloom filter — at ~10 bits per key it says "definitely absent" for ~99% of the tables that lack the key — and the sparse index turns what remains into one block read (~16 µs of SSD). Compaction merges tables in the background, keeps the newest siblings and drops tombstones past the grace period; it is also the likeliest thief of read IO, which is why coordinators wait for the fastest R replicas.
+The write is acknowledged as soon as the WAL append is durable — one sequential write, no seek. The memtable is sorted in memory (a skip list in RocksDB) so a flush streams entries in key order, and flushed SSTables are immutable: no reader locks, and a whole table can be shipped when a node streams a range to a new member. A read checks the memtable, then each SSTable's Bloom filter — at ~10 bits per key it rules out ~99% of the tables that lack the key — and the sparse index turns what remains into one block read (~16 µs of SSD). Compaction merges tables in the background, keeps the newest siblings and drops tombstones past the grace period.
 
-Write `WAL -> memtable -> SSTable (Bloom + index) -> compaction` on the whiteboard and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill". The measured amplification numbers are on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
+Whiteboard `WAL -> memtable -> SSTable (Bloom + index) -> compaction` and say "durability from the WAL, read speed from Bloom filters, write amplification as the bill"; the measured numbers are on the [storage engines page](../fundamentals/storage-engines-and-indexing.md).
 
 ## Scaling, bottlenecks and failure modes
 
