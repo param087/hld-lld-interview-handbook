@@ -111,7 +111,7 @@ flowchart LR
     e_gw --> s_order --> s_inv
 ```
 
-> **Candidate:** Browsing is read-mostly and cacheable, so it goes to the CDN and a catalog store off the critical path. Everything touching a seat goes through one inventory service in front of one sharded database, because the invariant lives there and nowhere else. No queue yet.
+> **Candidate:** Browsing is read-mostly and cacheable, so it goes to the CDN and a catalog store off the critical path. Everything touching a seat goes through one inventory service in front of one sharded database, because the invariant lives there and nowhere else.
 
 ### Minutes 20-26: the lock that kills the connection pool
 
@@ -285,7 +285,7 @@ flowchart LR
 - **min 1** — "asked about overselling before anything else. Correct instinct here."
 - **min 6** — "visibly surprised by 20 writes/s, said so, then used it. Did not pretend."
 - **min 9** — "derived 2k/s admission from primary capacity, rather than guessing a round number."
-- **min 11** — "'I nearly skipped the reads' — caught its own omission. Best number of the round."
+- **min 11** — "'I nearly skipped the reads' — caught its own omission."
 - **min 21** — "`FOR UPDATE` across a payment. Textbook failure; took only the pool argument."
 - **min 23** — "'a hold is data, not a lock' — one sentence repaired the design."
 - **min 34** — "enumerated all three race outcomes unprompted. Where I decided."

@@ -193,7 +193,7 @@ Draw the class diagram, then say "in Python I would start from a dict of callabl
 | **Observer** | You subscribe to *an object* (`feed.subscribe(watchlist)`), which holds its observers and defines the notification. With a bus you subscribe to *a topic string* on a third party; publisher and subscriber never reference each other, and one bus carries many unrelated event types: M publishers to N subscribers, not one subject to N observers. |
 | **Mediator** | A mediator *coordinates*: it knows its colleagues, encodes the workflow (stop the elevator, open the doors, reset the button), calls them in order and waits for answers. A bus understands nothing about its events; it routes and forgets. Handlers that depend on each other's order are a mediator without the name. |
 | **Pipeline and Middleware** | Serial and ordered, returns a result, any stage may stop the rest. A bus is fan-out: every subscriber gets the event, none can stop the others, nothing comes back. |
-| **Message queue, pub/sub system** | The same idea across processes, with durability, offsets, consumer groups and at-least-once delivery. The in-process bus is at-most-once. |
+| **Message queue, pub/sub system** | The same idea across processes, with durability, offsets, consumer groups and at-least-once delivery. |
 | **Command** | A request to do one thing, addressed to one receiver, often undoable. An event states that something happened and is addressed to nobody. |
 
 ## Where it appears in LLD problems

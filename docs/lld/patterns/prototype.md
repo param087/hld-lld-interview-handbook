@@ -123,7 +123,7 @@ Python ships the pattern, so a hand-written `clone` must justify itself. `copy.d
 ```
 
 - **`replace` re-runs `__init__`,** so validation fires again and a misspelled field is a `TypeError` at the call, not a stray attribute on the copy. Python 3.13 generalises it beyond dataclasses as `copy.replace()`.
-- **`deepcopy` copies too much by default.** It follows every reference it can reach, duplicating the engine, pool or lock hanging off your object. Register the clone in `memo` before copying anything that could point back at it, or a cycle in the graph recurses forever.
+- **`deepcopy` copies too much by default.** It follows every reference it can reach, duplicating the engine, pool or lock hanging off your object. Write the `memo` entry before copying anything that can point back, or a cycle never ends.
 
 | Reach for | When |
 |---|---|
@@ -140,7 +140,7 @@ Say the last row out loud: `clone` is an optimisation over `deepcopy`, bought wi
 
 - **The `copy` module is the pattern.** `copy.copy` and `copy.deepcopy` dispatch to `__copy__` and `__deepcopy__`, thread a `memo` dict so cycles terminate and shared subobjects stay shared, and otherwise fall back to `__reduce_ex__` — which is why anything picklable is already copyable.
 - **Clone-with-changes is everywhere on immutable types** — `datetime.replace`, `namedtuple._replace`, `Path.with_suffix` — and every container ships a shallow clone: `dict.copy`, `list.copy`, `collections.ChainMap.new_child`.
-- **Frameworks**: a Django `QuerySet` clones itself on every `filter()`, so chaining never mutates the queryset you started from; duplicating a row is the `pk = None; save()` idiom. JavaScript's prototype chain is the neighbouring idea built into a language: a new object delegates to an exemplar rather than copying one.
+- **Frameworks**: a Django `QuerySet` clones itself on every `filter()`, so chaining never mutates the queryset you started from; duplicating a row is the `pk = None; save()` idiom. JavaScript's prototypes delegate to an exemplar rather than copying one.
 
 ## Related patterns and confusions
 

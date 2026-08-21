@@ -38,5 +38,3 @@ AUTHORING.md the style guide every page follows
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-> **Status:** content is being authored in waves; until every page exists the site builds in non-strict mode. The final release flips Vercel and CI to `mkdocs build --strict` and the page linter to `--final`.
