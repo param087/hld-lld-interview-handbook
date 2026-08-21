@@ -139,6 +139,7 @@ nav:
           - CAP, PACELC and consistency models: hld/fundamentals/cap-pacelc-and-consistency-models.md
           - Messaging, queues and Kafka internals: hld/fundamentals/messaging-and-event-streaming.md
           - Consensus and coordination: hld/fundamentals/consensus-and-coordination.md
+          - Time, clocks and ordering: hld/fundamentals/time-and-ordering.md
           - Probabilistic data structures: hld/fundamentals/probabilistic-data-structures.md
           - Rate limiting: hld/fundamentals/rate-limiting.md
           - Resilience patterns: hld/fundamentals/resilience-patterns.md
@@ -147,9 +148,12 @@ nav:
           - Security essentials: hld/fundamentals/security-essentials.md
           - Observability, SLOs and error budgets: hld/fundamentals/observability-and-slos.md
           - Geospatial indexing: hld/fundamentals/geospatial-indexing.md
+          - Batch and stream processing: hld/fundamentals/batch-and-stream-processing.md
+          - Deployments, feature flags and data migrations: hld/fundamentals/deployment-and-data-migrations.md
       - Case studies:
           - hld/case-studies/index.md
           - Design a URL shortener: hld/case-studies/url-shortener.md
+          - Design a distributed rate limiter: hld/case-studies/rate-limiter.md
           - Design a Dynamo-style key-value store: hld/case-studies/key-value-store.md
           - Design a distributed unique ID generator: hld/case-studies/unique-id-generator.md
           - Design a news feed: hld/case-studies/news-feed.md
@@ -162,6 +166,7 @@ nav:
           - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
           - Design a distributed cache: hld/case-studies/distributed-cache.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
+          - Design a distributed job scheduler: hld/case-studies/job-scheduler.md
   - LLD:
       - lld/index.md
       - Fundamentals:
@@ -172,6 +177,7 @@ nav:
           - UML with Mermaid: lld/fundamentals/uml-with-mermaid.md
           - The LLD interview framework: lld/fundamentals/lld-interview-framework.md
           - Concurrency for LLD in Python: lld/fundamentals/concurrency-for-lld.md
+          - Clean code and testing: lld/fundamentals/clean-code-and-testing.md
           - Interfaces, contracts and service APIs in LLD: lld/fundamentals/interfaces-and-contracts.md
       - Design patterns:
           - lld/patterns/index.md
