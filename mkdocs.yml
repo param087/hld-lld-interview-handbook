@@ -156,9 +156,11 @@ nav:
           - Design a chat system: hld/case-studies/chat-messenger.md
           - Design Uber (with a DoorDash variant): hld/case-studies/ride-sharing.md
           - Design Ticketmaster (with a hotel-booking variant): hld/case-studies/ticketing-and-reservations.md
+          - Design Yelp (proximity service): hld/case-studies/proximity-service.md
           - Design Nearby Friends: hld/case-studies/nearby-friends.md
           - Design a payment system and digital wallet: hld/case-studies/payment-system.md
           - Design a distributed message queue: hld/case-studies/distributed-message-queue.md
+          - Design a distributed cache: hld/case-studies/distributed-cache.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
   - LLD:
       - lld/index.md
@@ -169,6 +171,7 @@ nav:
           - DRY, KISS, YAGNI, Demeter, GRASP and cohesion: lld/fundamentals/design-principles-beyond-solid.md
           - UML with Mermaid: lld/fundamentals/uml-with-mermaid.md
           - The LLD interview framework: lld/fundamentals/lld-interview-framework.md
+          - Concurrency for LLD in Python: lld/fundamentals/concurrency-for-lld.md
           - Interfaces, contracts and service APIs in LLD: lld/fundamentals/interfaces-and-contracts.md
       - Design patterns:
           - lld/patterns/index.md
