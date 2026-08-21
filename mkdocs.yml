@@ -161,6 +161,7 @@ nav:
           - Design a chat system: hld/case-studies/chat-messenger.md
           - Design Uber (with a DoorDash variant): hld/case-studies/ride-sharing.md
           - Design Ticketmaster (with a hotel-booking variant): hld/case-studies/ticketing-and-reservations.md
+          - Design typeahead autocomplete: hld/case-studies/typeahead.md
           - Design Yelp (proximity service): hld/case-studies/proximity-service.md
           - Design Nearby Friends: hld/case-studies/nearby-friends.md
           - Design a payment system and digital wallet: hld/case-studies/payment-system.md
@@ -171,6 +172,7 @@ nav:
           - Design S3 (with a GFS/HDFS variant): hld/case-studies/object-storage.md
           - Design Google Docs: hld/case-studies/collaborative-editor.md
           - Design a distributed job scheduler: hld/case-studies/job-scheduler.md
+          - Design Amazon (e-commerce with inventory and flash sales): hld/case-studies/ecommerce-platform.md
           - Design Twitch (live streaming with live comments): hld/case-studies/live-streaming-and-comments.md
   - LLD:
       - lld/index.md
@@ -223,6 +225,8 @@ nav:
           - Design a parking lot: lld/problems/parking-lot.md
           - Design an elevator system: lld/problems/elevator-system.md
           - Design an in-memory cache (LRU, LFU, TTL): lld/problems/in-memory-cache.md
+          - Design tic-tac-toe (an extensible board game): lld/problems/tic-tac-toe.md
+          - Design Splitwise: lld/problems/splitwise.md
           - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
   - Cheatsheets:
       - cheatsheets/index.md
