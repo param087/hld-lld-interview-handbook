@@ -14,10 +14,14 @@ import threading
 from collections.abc import Mapping
 
 from common import Clock, IdGenerator, SequentialIdGenerator, SystemClock
-from lld.notification_service.channels import ChannelSender, ExponentialBackoff, NullSender, RetryPolicy
+from lld.notification_service.channels import (
+    ChannelSender,
+    ExponentialBackoff,
+    NullSender,
+    RetryPolicy,
+)
 from lld.notification_service.models import (
     Channel,
-    DeliveryStatus,
     Notification,
     NotificationRequest,
     NotifyResult,
@@ -258,12 +262,14 @@ class NotificationService:
         clock: Clock | None = None,
         ids: IdGenerator | None = None,
         stages: list[Stage] | None = None,
+        request_ids: IdGenerator | None = None,
     ) -> None:
         self._engine = engine
         self._preferences = preferences
         self._queue = queue
         self._clock = clock or SystemClock()
         self._ids = ids or SequentialIdGenerator("n")
+        self._request_ids = request_ids or SequentialIdGenerator("q")
         self._pipeline = Pipeline(
             stages
             or [
@@ -289,7 +295,7 @@ class NotificationService:
         channels: tuple[Channel, ...] = (),
     ) -> NotifyResult:
         request = NotificationRequest(
-            id=self._ids.next_id(),
+            id=self._request_ids.next_id(),
             user_id=user_id,
             event=event,
             payload=dict(payload or {}),
@@ -311,12 +317,12 @@ class NotificationService:
         return len(self._queue)
 
 
-def status_counts(notifications: list[Notification]) -> dict[DeliveryStatus, int]:
-    """Small helper the demo uses to summarise a drain."""
-    counts: dict[DeliveryStatus, int] = {}
+def status_counts(notifications: list[Notification]) -> dict[str, int]:
+    """Small helper the demo uses to summarise a drain, sorted for stable output."""
+    counts: dict[str, int] = {}
     for notification in notifications:
-        counts[notification.status] = counts.get(notification.status, 0) + 1
-    return counts
+        counts[notification.status.value] = counts.get(notification.status.value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 # --8<-- [end:facade]

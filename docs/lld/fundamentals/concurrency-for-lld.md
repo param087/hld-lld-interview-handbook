@@ -14,7 +14,7 @@ Every artifact below lives in `code/fundamentals/concurrency.py`, tested in `cod
 
 ### The GIL protects the interpreter, not your invariants
 
-One thread executes Python bytecode at a time, and CPython switches threads every few milliseconds (`sys.setswitchinterval`, 5 ms by default) or whenever a thread blocks. That buys two things: the interpreter's own structures stay consistent, and an operation that completes inside one C call without releasing the GIL — `list.append`, `dict.__setitem__` — is effectively atomic. It buys nothing at the level you care about.
+One thread executes Python bytecode at a time, and CPython switches threads every few milliseconds or whenever a thread blocks. That buys two things: the interpreter's own structures stay consistent, and an operation that finishes inside one C call — `list.append` — is effectively atomic. It buys nothing at the level you care about.
 
 `self.value += 1` compiles to load, add, store. A thread can be preempted between the load and the store, and the value it eventually stores overwrites whatever another thread wrote in between:
 
@@ -22,7 +22,7 @@ One thread executes Python bytecode at a time, and CPython switches threads ever
 --8<-- "code/fundamentals/concurrency.py:counters"
 ```
 
-`forced_lost_update` is what makes this teachable: rather than running a million increments and hoping for a race, both threads read, meet at a `Barrier`, then write. Two increments applied, counter ends at 1, every run — which is what makes it a test rather than an anecdote. Note the cost side: an uncontended lock costs about 17 ns, so the lock is almost never the performance problem; contention is.
+`forced_lost_update` is what makes this teachable: rather than running a million increments and hoping for a race, both threads read, meet at a `Barrier`, then write. Two increments applied, counter ends at 1, every run. Note the cost side: an uncontended lock costs about 17 ns, so the lock is almost never the performance problem; contention is.
 
 ### The primitives, and when each is the right answer
 
@@ -39,7 +39,7 @@ One thread executes Python bytecode at a time, and CPython switches threads ever
 | `queue.Queue` | Hand-off between threads with the locking already written |
 | `ThreadPoolExecutor` | You want results and exceptions back, not threads |
 
-Two rules make the table usable. Always use the `with` form, so an exception cannot leave a lock held. And always wait inside a `while`, never an `if`: a wakeup says the predicate *might* hold, because another thread can be scheduled in between and take what you were woken for.
+Two rules make the table usable. Always use the `with` form, so an exception cannot leave a lock held. And always wait inside a `while`, never an `if`: a wakeup says the predicate *might* hold, not that it does.
 
 ### Producer-consumer with a Condition
 
@@ -79,9 +79,7 @@ Many readers share; a writer needs the place to itself. The right structure when
 --8<-- "code/fundamentals/concurrency.py:rwlock"
 ```
 
-The decision worth naming is *preference*. Here a reader waits while a writer is active **or queued**, so a stream of readers cannot starve a writer; readers starved by constant writes is the trade you accept. An interviewer who asks "what if reads never stop?" is checking that you chose rather than copied.
-
-Volunteer the second caveat before it is asked: this lock is **not reentrant**. A reader that takes the read lock and then calls a method that takes it again deadlocks the moment a writer queues in between, which is why `read_locked` wraps a leaf operation and never a callback.
+The decision worth naming is *preference*. Here a reader waits while a writer is active **or queued**, so a stream of readers cannot starve a writer; readers starved by constant writes is the trade you accept. An interviewer who asks "what if reads never stop?" is checking that you chose rather than copied. Volunteer the other caveat too: it is **not reentrant**, so re-taking the read lock deadlocks once a writer has queued between the two acquisitions.
 
 ### Thread-safe singletons and double-checked locking
 

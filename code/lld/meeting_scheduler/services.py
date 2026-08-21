@@ -229,6 +229,10 @@ class MeetingScheduler:
     def availability(self) -> AvailabilityService:
         return self._availability
 
+    @property
+    def rooms(self) -> RoomRegistry:
+        return self._rooms
+
     def builder(self) -> MeetingBuilder:
         return MeetingBuilder(self._ids)
 
@@ -286,17 +290,11 @@ class MeetingScheduler:
         return meeting
 
     def find_slot(
-        self,
-        attendee_ids: Sequence[str],
-        minutes: int,
-        window: Interval,
-        finder: SlotFinder | None = None,
+        self, attendee_ids: Sequence[str], minutes: int, window: Interval, finder: SlotFinder | None = None
     ) -> Interval | None:
         attendees = [self.user(user_id) for user_id in attendee_ids]
         busy = self._availability.busy(attendee_ids, window)
-        return (finder or EarliestSlotFinder()).find(
-            attendees, busy, window, timedelta(minutes=minutes)
-        )
+        return (finder or EarliestSlotFinder()).find(attendees, busy, window, timedelta(minutes=minutes))
 
     def horizon_occurrences(self, meeting: Meeting) -> list[Interval]:
         horizon = Interval(meeting.start, meeting.start + timedelta(days=self.BOOKING_HORIZON_DAYS))
@@ -345,12 +343,13 @@ class MeetingScheduler:
     def due_reminders(self, lead_minutes: int = 10) -> list[Reminder]:
         now = self._clock.now_dt()
         window = Interval(now, now + timedelta(minutes=lead_minutes))
-        due: list[Reminder] = []
-        for meeting in self._all_active():
-            for occurrence in self._availability.occurrences(meeting, window):
-                if now <= occurrence.start < window.end:
-                    due.append(Reminder(meeting.id, occurrence, lead_minutes))
-        return due
+        return [
+            Reminder(meeting.id, occurrence, lead_minutes)
+            for meeting in self._meetings.all()
+            if meeting.is_active()
+            for occurrence in self._availability.occurrences(meeting, window)
+            if now <= occurrence.start < window.end
+        ]
 
     def move(self, meeting: Meeting, new_start: datetime) -> Meeting:
         """Used by the reschedule command in both directions."""
@@ -367,9 +366,6 @@ class MeetingScheduler:
                     raise
         self._announce("rescheduled", meeting)
         return meeting
-
-    def _all_active(self) -> list[Meeting]:
-        return [meeting for meeting in self._meetings.all() if meeting.is_active()]
 
     def _lock_for(self, meeting_id: str) -> threading.RLock:
         with self._registry_lock:

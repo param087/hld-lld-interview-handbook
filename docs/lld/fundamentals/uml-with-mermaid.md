@@ -113,9 +113,7 @@ The six relationships, strongest coupling first:
 | `A ..> B` | Dependency | A mentions B in a signature or body | A parameter or local |
 | `A <|.. B` | Realisation | B implements A | `Protocol` or `ABC` |
 
-Inheritance and realisation are the two that come in mirrored pairs: `A <|-- B` and `B --|> A` draw the same arrow, as do `A <|.. B` and `B ..|> A`. Pick one direction and keep it — this handbook writes the abstraction first, so `FinePolicy <|.. DailyFine`.
-
-Composition versus aggregation is the distinction interviewers probe. A `Book` composes its `BookCopy` objects - destroy the catalogue entry and the copies are meaningless. `LendingService` aggregates a `FinePolicy` - the policy is injected, shared, and outlives any one service. **Multiplicities** are quoted strings on either end: `Member "1" --> "0..5" Loan` says a member holds at most five loans, and that single annotation answers a requirement question before it is asked.
+`A <|-- B` and `B --|> A` draw the same arrow, as do `A <|.. B` and `B ..|> A`; this handbook writes the abstraction first. Composition versus aggregation is the distinction interviewers probe. A `Book` composes its `BookCopy` objects - destroy the catalogue entry and the copies are meaningless. `LendingService` aggregates a `FinePolicy` - the policy is injected, shared, and outlives any one service. **Multiplicities** are quoted strings on either end: `Member "1" --> "0..5" Loan` says a member holds at most five loans, and that single annotation answers a requirement question before it is asked.
 
 ### Sequence diagrams: the order of calls
 
@@ -236,7 +234,7 @@ The same syntax draws the architecture diagrams in the HLD half of the handbook;
 
 ### Entity-relationship diagrams
 
-An `erDiagram` is the persisted view: what has a table, what has a key, and how many of each. Cardinality markers come in mirrored pairs, and each one sits next to the entity it describes: `||` on either side is exactly one, `|o` / `o|` is zero or one, `}o` / `o{` is zero or many, and `}|` / `|{` is one or many. The crow's foot always points at the *many* end, so `MEMBER ||--o{ LOAN` reads "one member, zero or many loans".
+An `erDiagram` is the persisted view: what has a table, what has a key, and how many of each. Each marker sits next to the entity it describes and comes in a mirrored pair: `||` exactly one, `|o`/`o|` zero or one, `}o`/`o{` zero or many, `}|`/`|{` one or many. The crow's foot points at the *many* end, so `MEMBER ||--o{ LOAN` is one member, zero or many loans.
 
 **What the lending system stores, and the keys that join it.**
 
@@ -285,7 +283,7 @@ The relationship label after the colon is **mandatory** - omit it and the diagra
 - Soft limit 25 nodes, hard limit 30. Past that, split the diagram - two readable pictures always beat one dense one.
 - Never `%%{init ...}%%`, `style`, `classDef`, `linkStyle` or `click`: they hard-code colours that vanish in the dark theme. `%%` comments only on their own line.
 - ASCII identifiers, no tabs, no unicode arrows, and no `"` inside a quoted label - rephrase instead.
-- Prefix flowchart node ids by kind (`svc_order`, `db_users`, `chk_limit`) so no id begins with `o` or `x` immediately after `---`: Mermaid reads `a---oB` as a circle edge and `a---xB` as a cross edge, and your node vanishes.
+- Prefix flowchart node ids by kind (`svc_order`, `db_users`, `chk_limit`): an id starting with `o` or `x` right after `---` is eaten as a circle or cross edge.
 - Class names in a diagram must be identical to the class names in the code the page embeds.
 - Validate before you commit: `node scripts/validate_mermaid.mjs --files docs/lld/fundamentals/uml-with-mermaid.md`.
 
@@ -302,7 +300,7 @@ erDiagram     USER ||--o{ ORDER                    ->  USER ||--o{ ORDER : place
 state         Waiting for payment --> Paid         ->  state "Waiting for payment" as WaitPay
 ```
 
-Square brackets, angle brackets and pipes inside a class member are the most common failure: Mermaid reads them as shape syntax. Write `List~Spot~` and `Dict~str,int~`, and drop `Optional` entirely. In flowcharts, `end` is reserved and an unquoted label containing brackets or parentheses ends the node early. In sequence diagrams a participant id must be one token, so give it an alias.
+Square brackets, angle brackets and pipes inside a class member are the most common failure: Mermaid reads them as shape syntax. Write `List~Spot~` and `Dict~str,int~`, and drop `Optional` entirely.
 
 ## Applying it in the interview
 
@@ -340,7 +338,7 @@ On a whiteboard you draw the same shapes by hand; in a shared editor you type th
 3. **Fix this fence**: `flowchart LR` with `cache[Redis (LRU, 10 GB)] --> end`.
 
     ??? example "Solution"
-        Two errors. The label contains parentheses and commas, so it must be quoted: `cache["Redis (LRU, 10 GB)"]`. And `end` is a reserved word in flowcharts, so the target needs a real id: `svc_done["Return the response"]`. The result is `cache["Redis (LRU, 10 GB)"] --> svc_done["Return the response"]`.
+        Two errors. The label contains parentheses and commas, so it must be quoted: `cache["Redis (LRU, 10 GB)"]`. And `end` is a reserved word in flowcharts, so the target needs a real id: `--> svc_done["Return the response"]`.
 
 4. **When is a state diagram the wrong choice?**
 
