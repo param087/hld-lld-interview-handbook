@@ -64,7 +64,7 @@ Using the [latency and estimation tables](../../cheatsheets/latency-and-estimati
 | Order storage | 10M/day x 2 KB x 365 | ~7.3 TB/year, ~22 TB at 3x |
 | Flash-sale contention | 100k reserve/s versus ~2k/s per row (500 µs hold) | ~50 counters needed, use 64 |
 
-Two things to say out loud. **The read and write paths share nothing but a SKU id**: 20k reads a second come from a CDN and a cache that never touch the inventory row, while 300 order writes a second are the only place correctness is at stake. And **a flash sale is a contention problem, not a throughput problem**: 100k/s against one row is fifty times what a row sustains, so shard the counter rather than the service.
+Two things to say out loud. **The read and write paths share nothing but a SKU id**: 20k reads a second never touch the inventory row, while 300 order writes a second are the only place correctness is at stake. And **a flash sale is a contention problem, not a throughput problem**: 100k/s against one row is fifty times what a row sustains, so shard the counter, not the service.
 
 ## API design
 
@@ -149,8 +149,8 @@ erDiagram
 
 Store choices, each with its consistency stance:
 
-- **Catalog**: key-value by `sku`, fronted by a CDN and a cache. Eventually consistent — a price change taking a minute to propagate is fine — with a change feed into the search index.
-- **Search**: an inverted index fed by change data capture at ~5k–10k docs/s per data node. Never the source of truth for price or stock.
+- **Catalog**: key-value by `sku`, fronted by a CDN and a cache, eventually consistent, with a change feed into the search index.
+- **Search**: an inverted index fed by change data capture. Never the source of truth for price or stock.
 - **Cart**: key-value with a TTL — Redis for speed, DynamoDB when carts must survive a flush. Keyed by `cart_id` and never joined against anything.
 - **Inventory**: relational, partitioned by `sku`, so a reservation over co-located SKUs is one transaction and the rest is a bounded multi-partition write.
 - **Orders**: relational, partitioned by `user_id` so history is one partition scan, `idempotency_key` unique.
@@ -260,7 +260,7 @@ sequenceDiagram
     SS-->>B: 200 hits, facets, next_cursor
 ```
 
-The structural claim: the read path never touches the inventory row and the write path never scans the catalog. They meet at the SKU id, which is what lets one side be a CDN problem and the other a transaction problem.
+The structural claim: the two paths meet only at the SKU id, which lets one be a CDN problem and the other a transaction problem.
 
 ## Deep dive: the catalog and search read path
 
@@ -268,11 +268,11 @@ The probing question is "20,000 product page views a second — where does that 
 
 The catalog is **read-mostly and eventually consistent**, so it stacks caches. The CDN holds product JSON and images with a short TTL and an `ETag`, absorbing most traffic. Behind it a cache holds the SKU record — 1M hot SKUs at 5 KB is ~5 GB — and behind that a key-value store handles the long tail of 500M products. A price change writes the store and publishes an event that invalidates the cache and the CDN key; at thousands of writes a day, invalidation is cheap.
 
-**Search is a derived store, never the source of truth.** Change data capture from the catalog feeds an inverted index at ~5k–10k docs/s per data node; queries return hits plus facet counts. Two rules keep it honest. Search results carry **ids and cached display fields only**, so hydration comes from the catalog cache and a stale index cannot show a stale price. And search shows a **coarse stock band** — "in stock", "only a few left", "out of stock" — not a live count, because publishing an exact number both leaks business data and creates a promise the reserve call may break a second later.
+**Search is a derived store, never the source of truth.** Change data capture from the catalog feeds an inverted index at ~5k–10k docs/s per data node; queries return hits plus facet counts. Two rules keep it honest. Search results carry **ids and cached display fields only**, so hydration comes from the catalog cache and a stale index cannot show a stale price. And search shows a **coarse stock band** — "in stock", "only a few left", "out of stock" — never a live count.
 
 Pagination is cursor-based over `(score, sku)` and deep pagination is capped: nobody legitimately reads page 500, and allowing it turns one request into a full index scan.
 
-State the consistency stance: the catalog lags by minutes at the CDN and seconds at the cache, and the index lags the catalog by seconds. All acceptable — a customer seeing a product that just sold out is normal shopping, and the reserve call enforces the truth.
+The stance to state: the catalog lags minutes at the CDN and seconds at the cache, the index seconds behind that. A customer seeing a product that just sold out is normal shopping; the reserve call enforces the truth.
 
 ## Deep dive: the cart
 
@@ -284,11 +284,11 @@ The probing question is "where does the cart live, and what happens when a guest
 | DynamoDB or Cassandra | Durable, TTL support, linear scale | Slower, costs more per operation | Carts that live for weeks |
 | Relational rows | Joins to products and orders are free | Wastes transactional capacity | Small catalogs only |
 
-Choose a **key-value store keyed by `cart_id` with a TTL** — Redis for session carts, DynamoDB when they must live for weeks across devices. The cart holds `(sku, quantity)` and nothing else: no prices, no availability, both re-read at render and at checkout, because a price cached in the cart is a customer-service incident waiting to happen.
+Choose a **key-value store keyed by `cart_id` with a TTL**. The cart holds `(sku, quantity)` and nothing else: no prices, no availability, both re-read at render and at checkout, because a price cached in the cart is a customer-service incident waiting to happen.
 
 **The guest merge** is the part interviewers actually probe. A guest gets a `cart_id` in a cookie; on login you union it into the user cart rather than replacing it, because someone who added items before logging in expects both sets. Take the maximum quantity per SKU, cap each line at available stock, and drop dead SKUs. Do it server-side, where a union is naturally idempotent and the endpoint is safe to call twice.
 
-Two more decisions. **A cart never reserves stock** — reserving at add-to-cart looks friendly and destroys availability, because most carts are abandoned. And **cart writes are a set, not an increment**, so a retried request cannot silently double a quantity, which is also why `PUT` is the right verb.
+Two more decisions. **A cart never reserves stock**; reserving at add-to-cart destroys availability. And **cart writes are a set, not an increment**, so a retried request cannot silently double a quantity — which is also why `PUT` is the right verb.
 
 !!! warning "Common mistake"
     Reserving inventory when an item enters the cart. Roughly seven in ten carts are abandoned, so you would hold most of your stock for people who never buy, watch conversion collapse, and then bolt on a sweeper to undo it. Reserve at checkout, with a TTL measured in minutes.
@@ -350,7 +350,7 @@ sequenceDiagram
     end
 ```
 
-The step kinds carry the whole design. `reserve_inventory` is **compensatable**: it may fail harmlessly, and its compensation gives the units back. `charge_payment` is the **pivot**: after it, money has moved, so nothing downstream may fail permanently. `commit_inventory` and `create_shipment` are **retriable**: they are retried until they succeed, and a run that exhausts its attempts is parked for a human rather than silently reversed.
+The step kinds carry the whole design. `reserve_inventory` is **compensatable**: it may fail harmlessly, and its compensation gives the units back. `charge_payment` is the **pivot**: after it money has moved, so nothing downstream may fail permanently. `commit_inventory` and `create_shipment` are **retriable**: retried until they succeed, and a run that exhausts its attempts is parked for a human rather than silently reversed.
 
 ```python title="code/hld/inventory_reservation.py — the checkout saga"
 --8<-- "code/hld/inventory_reservation.py:checkout"
@@ -374,7 +374,7 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-Running the module walks the whole flow: an all-or-nothing reservation, an idempotent retry, a stale-version rejection, a lazily reclaimed expiry, a retry after a compensation that takes a fresh hold, a completed saga, a compensated one, and a sharded flash sale.
+Running the module walks the whole flow, from an all-or-nothing reservation to a compensated saga and a sharded flash sale:
 
 ```text
 ord-1 reserves 2 tshirt + 1 mug   -> rsv-1, available {'tshirt': (3, 2), 'mug': (1, 1), 'poster': (10, 0)}
@@ -474,13 +474,13 @@ What breaks first, and what you do about it:
     Three places: `POST /v1/orders`, so a retried checkout makes one order; the reservation keyed by `order_id`, so a retried step does not reserve twice while its hold is live; and the capture keyed by `order_id`, so a retry does not charge twice. Cart writes need no key: they are idempotent by shape.
 
 ??? question "How would you add price and promotion changes safely?"
-    Price is resolved at checkout from the catalog, never from the cart, and copied into the order line. The order then holds immutable evidence of what was agreed, and a promotion expiring mid-checkout produces a repricing prompt rather than a silent difference.
+    Price is resolved at checkout from the catalog, never from the cart, and copied into the order line as immutable evidence of what was agreed; a promotion expiring mid-checkout produces a repricing prompt, not a silent difference.
 
 ??? question "How do you test that you never oversell?"
     A concurrency test that fires hundreds of reservations at ten units and asserts exactly ten succeed and availability lands on zero — which is what the module's tests do, along with the same assertion against the sharded counter.
 
 !!! tip "Interview tip"
-    Open by splitting the problem: "this is a 200:1 read-heavy catalog, a disposable cart, and a strongly consistent inventory row — three different consistency models, so I will design them separately." Interviewers are listening for whether you can tell which 1% of the system actually needs transactions.
+    Open by splitting the problem: "this is a 200:1 read-heavy catalog, a disposable cart, and a strongly consistent inventory row — three consistency models, so I will design them separately." Interviewers listen for whether you can tell which 1% of the system needs transactions.
 
 ## 45-minute pacing
 

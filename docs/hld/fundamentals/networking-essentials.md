@@ -6,13 +6,13 @@ description: The networking an HLD round actually tests — DNS, TCP vs UDP, the
 
 ## TL;DR
 
-- Every hop is a round trip you can price: ~500 µs inside a datacenter, 70 ms across the US, 150 ms California to the Netherlands; connection setup costs one to three of them before the first byte.
-- Know what each layer buys: DNS steers, TCP orders, TLS 1.3 secures in one round trip, HTTP/2 multiplexes, QUIC removes head-of-line blocking, pooling amortises all of it.
-- Interviewers probe realtime transports (polling, long polling, SSE, WebSocket) and API styles (REST, gRPC, GraphQL); choose by direction, latency and who sits between client and server.
+- Every hop is a round trip you can price: ~500 µs in a datacenter, 70 ms across the US, 150 ms California to the Netherlands; setup costs one to three.
+- Know what each layer buys: DNS steers, TCP orders, TLS 1.3 secures in one round trip, HTTP/2 multiplexes, QUIC removes head-of-line blocking, pooling amortises it.
+- Interviewers probe realtime transports (polling, long polling, SSE, WebSocket) and API styles; choose by direction, latency and what sits in between.
 
 ## Core concepts
 
-Networking questions in a design round are latency questions in disguise: how many round trips does a request cost, where are they, and what removes them. Keep three numbers in front of you — a same-datacenter round trip is ~500 µs, a US coast-to-coast round trip ~70 ms, California to the Netherlands and back ~150 ms — and every protocol below becomes a count of those.
+Networking questions in a design round are latency questions in disguise: how many round trips, where, and what removes them. Keep three numbers in front of you — ~500 µs same-datacenter, ~70 ms US coast-to-coast, ~150 ms California to the Netherlands — and every protocol below becomes a count of those.
 
 ### DNS: recursion, TTL, GeoDNS and anycast
 
@@ -42,11 +42,11 @@ sequenceDiagram
     Note over C,R: the client reuses the answer until the TTL expires
 ```
 
-The client's stub resolver asks a recursive resolver, which answers from cache or walks the hierarchy: root servers refer it to the TLD servers, which refer it to your authoritative servers, which answer. Each referral is a round trip, so a cold lookup from Europe against US-hosted name servers can cost several hundred milliseconds, which is why resolvers cache aggressively and why every record carries a TTL. The TTL is a design knob: a 60-second TTL lets you move traffic off a failed region within a minute or two but keeps resolvers coming back, a one-day TTL makes a failover take a day for some clients. GeoDNS returns a different answer per resolver location, steering users to the nearest region; it is approximate because it sees the resolver's location, not the user's. Anycast announces one IP from many locations and lets routing deliver each packet to the nearest one — how public resolvers and CDN edges work, and a clean way to spread load balancer traffic across sites without DNS tricks.
+Each referral above is a round trip, so a cold lookup from Europe against US-hosted name servers can cost several hundred milliseconds — which is why resolvers cache aggressively and every record carries a TTL. The TTL is a design knob: 60 seconds moves traffic off a failed region within a minute or two but keeps resolvers coming back; a day makes failover take a day for some clients. GeoDNS returns a different answer per resolver location, steering users to the nearest region; it is approximate, because it sees the resolver, not the user. Anycast announces one IP from many locations and lets routing deliver each packet to the nearest — how public resolvers and CDN edges work, and a way to spread load-balancer traffic across sites without DNS tricks.
 
 ### TCP vs UDP: handshakes and head-of-line blocking
 
-TCP gives you an ordered, reliable byte stream for the price of a three-way handshake — one round trip before any data — plus congestion control that starts slow and backs off on loss. Its weakness for modern workloads is head-of-line blocking: one lost segment stalls every byte behind it, even bytes that belong to unrelated requests multiplexed on the same connection. UDP is datagrams with no handshake, no ordering and no retransmission; anything you need on top is yours to build, which is exactly what QUIC does. Use TCP for almost everything; reach for UDP when a late packet is worthless (voice, video, game state) or when you are building a transport that needs independent streams.
+TCP gives an ordered, reliable byte stream for the price of a three-way handshake — one round trip before any data — plus congestion control that starts slow and backs off on loss. Its weakness is head-of-line blocking: one lost segment stalls every byte behind it, including bytes of unrelated requests multiplexed on the same connection. UDP is datagrams with no handshake, ordering or retransmission; anything on top is yours to build, which is exactly what QUIC does. Use TCP for almost everything; reach for UDP when a late packet is worthless (voice, video, game state) or you are building a transport with independent streams.
 
 ### TLS 1.3: one round trip to a secure channel
 
@@ -72,7 +72,7 @@ sequenceDiagram
     end
 ```
 
-TLS 1.3 folds key exchange into the first flight: the client guesses the key-exchange group and sends its share with the ClientHello, the server answers with its own share and can encrypt everything after the ServerHello, so the handshake costs one round trip instead of TLS 1.2's two. Priced from California to Amsterdam, a fresh TLS 1.2 connection is TCP plus two TLS round trips, 3 x 150 ms = 450 ms before the first byte; TLS 1.3 is 300 ms; QUIC merges the transport and TLS handshakes into one, 150 ms; and resumption with 0-RTT data puts the request in the first packet. The catch with 0-RTT is replay — an attacker can resend the early data — so only idempotent requests may ride on it. SNI tells the server which certificate to present, ALPN negotiates HTTP/2 or HTTP/3 during the handshake, and TLS termination at the load balancer is where these costs are paid in most designs, with plaintext or mutual TLS behind it.
+TLS 1.3 folds key exchange into the first flight: the client guesses the group and sends its share with the ClientHello, so the handshake costs one round trip instead of TLS 1.2's two. Priced California to Amsterdam, a fresh TLS 1.2 connection is TCP plus two TLS round trips, 3 x 150 ms = 450 ms before the first byte; TLS 1.3 is 300 ms; QUIC merges transport and TLS handshakes into one, 150 ms; 0-RTT resumption puts the request in the first packet. The catch with 0-RTT is replay — an attacker can resend the early data — so only idempotent requests may ride on it. SNI tells the server which certificate to present, ALPN negotiates HTTP/2 or HTTP/3 during the handshake, and TLS termination at the load balancer is where these costs are paid, with plaintext or mTLS behind it.
 
 ### HTTP/1.1, HTTP/2 and HTTP/3
 
@@ -84,11 +84,11 @@ TLS 1.3 folds key exchange into the first flight: the client guesses the key-exc
 | Connection setup | TCP + TLS | TCP + TLS | One handshake, 0-RTT resumption, survives IP changes |
 | Use it for | Legacy clients, simple internal calls | The default for browsers and gRPC | Mobile and lossy networks, CDN edges |
 
-HTTP/1.1 keep-alive reuses a connection for sequential requests, which removes the handshakes but still serialises requests, so browsers open several connections per host to get parallelism. HTTP/2 multiplexes many streams on one connection with compressed headers, which is why it is the default for browsers and the transport under gRPC, but all streams share one TCP connection, so a single lost packet stalls every stream until it is retransmitted — worse, on a lossy link, than HTTP/1.1's separate connections. HTTP/3 runs on QUIC, where each stream is delivered independently and a connection is identified by an ID rather than the address tuple, so a phone moving from Wi-Fi to cellular keeps its connection. In a design, say HTTP/2 between services and at the edge, HTTP/3 where you serve mobile users over poor networks.
+HTTP/1.1 keep-alive removes the handshakes but still serialises requests, so browsers open several connections per host for parallelism. HTTP/2's streams all share one TCP connection, so a single lost packet stalls every one of them — worse on a lossy link than HTTP/1.1's separate connections. HTTP/3 identifies a connection by an ID rather than the address tuple, so a phone moving from Wi-Fi to cellular keeps it. In a design: HTTP/2 between services and at the edge, HTTP/3 where you serve mobile users over poor networks.
 
 ### REST vs gRPC vs GraphQL
 
-REST is resources and HTTP verbs over JSON: cacheable by URL, debuggable with curl, understood by every proxy and client. gRPC is typed RPC over HTTP/2 with protobuf: a schema you compile into client stubs, streaming in both directions, and messages several times smaller and faster to parse than JSON, at the price of opaque binary payloads and a gateway whenever a browser must call it. GraphQL gives the client one endpoint and a query language to ask for exactly the fields it needs across several resources, which removes the mobile client's round trips and over-fetching and moves the cost to the server, where an unbounded query can fan out into hundreds of database calls and where per-URL caching no longer works. The usual split: REST at the public edge, gRPC between services, GraphQL as a client-facing aggregation layer when many screens want different shapes of the same data. [API design for HLD rounds](api-design.md) covers the conventions for each.
+Read these as transports first. REST rides plain HTTP/1.1 or HTTP/2, so it is cacheable by URL, debuggable with curl and understood by every proxy. gRPC requires HTTP/2: binary protobuf frames, streaming in both directions, messages several times smaller and faster to parse than JSON — and a translating proxy whenever a browser must call it, because browsers cannot control HTTP/2 framing. GraphQL is one POST endpoint, which defeats per-URL caching and turns each request into a server-side fan-out that needs a cost limiter. The usual split: REST at the public edge, gRPC between services, GraphQL as a client-facing aggregation layer. [API design for HLD rounds](api-design.md) owns the contract conventions for each.
 
 ### Realtime: short polling, long polling, SSE and WebSocket
 
@@ -110,15 +110,15 @@ flowchart LR
     r_long --> r_scale
 ```
 
-Short polling asks on a timer and is the right answer more often than candidates admit: it is stateless, cacheable and works everywhere, and its cost is empty responses — 1M clients polling every 5 seconds is 200k QPS of mostly nothing, ~20 proxy-class nodes at ~10k QPS each. Long polling parks the request on the server until there is data or a timeout, then the client immediately asks again: near-instant delivery through any proxy, at the price of a held connection per client and a reconnect per message. SSE keeps one HTTP response open and streams text events server to client with built-in reconnection and last-event IDs; it is the simplest push transport and multiplexes cleanly over HTTP/2. WebSocket upgrades an HTTP connection to a full-duplex binary channel for chat, collaborative editing and games; it costs an upgrade that some corporate proxies block, so plan a long-polling fallback. Every push transport makes the server stateful — a connection lives on one node — so scaling needs a session registry (which node holds this user), a pub/sub layer to route a message from the node that received it to the node that holds the recipient, heartbeats to detect dead connections, and a deploy process that drains connections instead of dropping them; [Design a chat system](../case-studies/chat-messenger.md) builds that tier for 50M DAU and ~23k messages/s.
+Short polling asks on a timer and is the right answer more often than candidates admit: stateless, cacheable, works everywhere, and its cost is empty responses — 1M clients polling every 5 s is 200k QPS of mostly nothing, ~20 proxy-class nodes at ~10k QPS each. Long polling parks the request until there is data or a timeout, then the client asks again: near-instant delivery through any proxy, at the price of a held connection per client and a reconnect per message. SSE keeps one HTTP response open and streams text events with built-in reconnection and last-event IDs — the simplest push transport, and it multiplexes cleanly over HTTP/2. WebSocket upgrades to a full-duplex binary channel, and the upgrade is what corporate proxies block. Every push transport makes the server stateful, since a connection lives on one node, so scaling needs a session registry (which node holds this user), a pub/sub layer to route a message to the node holding the recipient, heartbeats, and a deploy that drains connections instead of dropping them; [Design a chat system](../case-studies/chat-messenger.md) builds that tier for 50M DAU and ~23k messages/s.
 
 ### Connection pooling
 
-Inside a datacenter a new connection per request costs a TCP round trip plus a TLS round trip, 2 x 500 µs = 1 ms, plus the CPU of the key exchange — more than many requests take to execute. Pools keep warm connections to each downstream (databases, caches, other services) and hand them out per request, so the steady-state cost of a hop is one round trip. Size pools deliberately: a database accepts only so many connections, so 200 app servers with a pool of 50 each is 10,000 connections against a primary that may want a few hundred, which is why a connection proxy (PgBouncer-style) sits between the app tier and a relational primary. Set connect and read timeouts on every pool, because a hung connection held forever is how one slow dependency exhausts every caller.
+Inside a datacenter a new connection per request costs a TCP plus a TLS round trip, 2 x 500 µs = 1 ms, plus the CPU of the key exchange — more than many requests take to execute. Pools keep warm connections to each downstream and hand them out per request, so a hop costs one round trip in steady state. Size them deliberately: 200 app servers with a pool of 50 each is 10,000 connections against a primary that may want a few hundred, which is why a connection proxy (PgBouncer-style) sits in front of a relational primary. Set connect and read timeouts on every pool: a hung connection held forever is how one slow dependency exhausts every caller.
 
 ### Serialization and schema evolution
 
-JSON is self-describing text: readable, schemaless, universally supported, and large and slow to parse relative to binary formats. Protobuf is a compiled schema with numbered fields: compact, fast and strongly typed, with evolution rules that make it safe to change — add new fields with new numbers, never reuse or renumber a field, keep unknown fields when forwarding. Avro stores the writer's schema alongside the data (or in a registry) and resolves reader and writer schemas at read time, which suits event logs where producers and consumers upgrade at different times. The evolution rules are the interview content: a new required field breaks old producers, a removed field breaks old consumers, so make every change additive, give every field a default, and put a schema registry in front of any topic that more than one team reads.
+JSON is self-describing text: readable, schemaless, universal, and large and slow to parse next to binary formats. Protobuf is a compiled schema with numbered fields — compact, fast, strongly typed — whose evolution rules make change safe: add fields with new numbers, never reuse or renumber one, keep unknown fields when forwarding. Avro stores the writer's schema beside the data (or in a registry) and resolves reader against writer at read time, which suits event logs whose producers and consumers upgrade separately. The evolution rules are the interview content: a new required field breaks old producers, a removed field breaks old consumers, so keep every change additive, default every field, and put a schema registry in front of any topic more than one team reads.
 
 ## Trade-offs
 
@@ -129,59 +129,59 @@ JSON is self-describing text: readable, schemaless, universally supported, and l
 | SSE | Near instant | One open response, cheap | Server to client only | Plain HTTP, multiplexes on HTTP/2 | Long polling | Feeds, tickers, progress, LLM token streams |
 | WebSocket | Lowest, binary frames | One upgraded connection with heartbeats | Full duplex | Upgrade can be blocked, one stream per connection | Long polling | Chat, collaborative editing, games, trading |
 
-Start from the slowest transport that meets the latency requirement, because each step up adds server state. If updates arrive every minute or slower, poll: it is stateless, it caches at the CDN, and the interviewer will respect the restraint. If the server pushes and the client rarely talks back — feeds, notifications, progress bars, streamed model output — SSE is the default: one open HTTP response, automatic reconnection with a last-event ID, no special proxy handling on HTTP/2. Choose WebSocket only when the client sends as often as it receives or needs binary frames with minimal framing overhead, and say in the same breath how you will scale the stateful tier: a registry of which node holds which connection, a pub/sub bus to route between nodes, heartbeats, and draining on deploy. Keep long polling as the fallback for both push transports, since corporate proxies still strip upgrades and some clients lack EventSource. For APIs, the same restraint applies: REST unless you need the typed contract and streaming of gRPC between services, GraphQL only when client-driven field selection is worth a query planner and a cost limiter.
+Start from the slowest transport that meets the latency requirement, because each step up adds server state. If updates arrive every minute or slower, poll: stateless, cacheable at the CDN, and the interviewer will respect the restraint. If the server pushes and the client rarely talks back — feeds, notifications, progress bars, streamed model output — SSE is the default: one open HTTP response, automatic reconnection with a last-event ID, no special proxy handling on HTTP/2. Choose WebSocket only when the client sends as often as it receives or needs binary frames, and say in the same breath how you will scale the stateful tier. Keep long polling as the fallback for both, since corporate proxies still strip upgrades and some clients lack EventSource. For APIs the same restraint applies: REST unless you need gRPC's typed contract and streaming between services, GraphQL only when client-driven field selection is worth a query planner and a cost limiter.
 
 ## In the interview
 
-Bring networking in when you draw the first arrow: "clients resolve the gateway through GeoDNS with a 60-second TTL, terminate TLS 1.3 at the load balancer, and talk HTTP/2 to it; inside the datacenter services use gRPC over pooled connections." One sentence places DNS, TLS, HTTP and pooling without a separate lecture, and later questions about latency have a foundation to stand on.
+Bring networking in when you draw the first arrow: "clients resolve the gateway through GeoDNS with a 60-second TTL, terminate TLS 1.3 at the load balancer, and talk HTTP/2 to it; inside the datacenter services use gRPC over pooled connections." One sentence places DNS, TLS, HTTP and pooling.
 
-Phrases that signal depth: "that is one more round trip, about 150 ms cross-region"; "HTTP/2 removes head-of-line blocking at the HTTP layer but not at TCP, which is what QUIC fixes"; "0-RTT only for idempotent requests because of replay".
+Phrases that signal depth: "that is one more round trip, about 150 ms cross-region"; "HTTP/2 removes head-of-line blocking at the HTTP layer but not at TCP — that is what QUIC fixes"; "0-RTT only for idempotent requests because of replay".
 
 ??? question "Why does your chat design use WebSocket instead of SSE?"
-    Because clients send as often as they receive, and one full-duplex connection is cheaper than an SSE stream down plus a POST per message up. If the system were notifications only, SSE would win on simplicity and proxy friendliness.
+    Because clients send as often as they receive, and one full-duplex connection is cheaper than an SSE stream down plus a POST per message up. For notifications only, SSE would win on simplicity and proxy friendliness.
 
 ??? question "A WebSocket server holds a user's connection. How does a message from another server reach it?"
-    A session registry maps user to node; the sending node looks up the recipient's node and publishes to it over a pub/sub channel (one topic per node or per user shard). If the recipient is offline, the message waits in storage and a push notification goes out instead.
+    A session registry maps user to node; the sender looks up the recipient's node and publishes to it over pub/sub (one topic per node or user shard). If the recipient is offline the message waits in storage and a push notification goes out.
 
 ??? question "How does a short DNS TTL help a regional failover, and what does it cost?"
-    Resolvers re-ask after the TTL, so a 60-second TTL moves most traffic within a minute or two of changing the record. It costs more lookups against your authoritative servers and still leaves clients that ignore TTLs, which is why a health-checked load balancer or anycast in front is the faster failover.
+    Resolvers re-ask after the TTL, so 60 seconds moves most traffic within a minute or two of changing the record. It costs more lookups and still leaves clients that ignore TTLs, which is why a health-checked load balancer or anycast in front fails over faster.
 
 ??? question "What breaks if you expose gRPC directly to browsers?"
-    Browsers cannot control HTTP/2 framing or trailers, so plain gRPC does not work; you need gRPC-Web through a proxy or a REST/JSON gateway that translates. Most designs keep gRPC internal and put REST or GraphQL at the edge.
+    Browsers cannot control HTTP/2 framing or trailers, so plain gRPC does not work: you need gRPC-Web through a proxy or a REST/JSON gateway. Most designs keep gRPC internal and put REST or GraphQL at the edge.
 
 ??? question "Why not open a new database connection per request?"
-    Each one costs a TCP and a TLS handshake and authentication, ~1 ms inside a datacenter plus CPU, and the database caps its connection count. A pool with timeouts amortises the setup and bounds the load; a connection proxy multiplexes thousands of app connections onto hundreds of database ones.
+    Each costs a TCP and TLS handshake plus authentication, ~1 ms inside a datacenter, and the database caps its connection count. A pool with timeouts amortises setup and bounds load; a connection proxy multiplexes thousands of app connections onto hundreds of database ones.
 
 !!! tip "Interview tip"
-    Count round trips out loud whenever you add a hop or a handshake: "that is TCP plus TLS 1.3, two round trips, about 1 ms in the datacenter and 300 ms cross-region". It converts protocol trivia into the latency budget the interviewer is actually grading.
+    Count round trips out loud whenever you add a hop or a handshake: "that is TCP plus TLS 1.3, two round trips, about 1 ms in the datacenter and 300 ms cross-region". It turns protocol trivia into the latency budget being graded.
 
 ## Common mistakes
 
-- **WebSocket for everything**: a dashboard that updates every minute gets a stateful, proxy-hostile connection per viewer. Fix: poll or use SSE unless the client sends as often as it receives.
-- **Ignoring the stateful tier**: drawing a WebSocket box with no registry, no pub/sub and no draining, so a deploy disconnects every user and messages cross nodes by luck. Fix: registry, pub/sub routing, heartbeats, graceful drain.
+- **WebSocket for everything**: a dashboard that updates every minute gets a stateful, proxy-hostile connection per viewer. Fix: poll or SSE unless the client sends as often as it receives.
+- **Ignoring the stateful tier**: a WebSocket box with no registry, no pub/sub and no draining, so a deploy disconnects every user. Fix: registry, pub/sub routing, heartbeats, graceful drain.
 - **Treating HTTP/2 as the end of head-of-line blocking**: it removes it at the HTTP layer; one lost TCP packet still stalls every stream. Fix: name QUIC and HTTP/3 for lossy networks.
-- **A long DNS TTL on a record you may need to move**: a day-long TTL turns a regional failover into a day of partial outage. Fix: short TTLs on records that steer traffic, anycast or a load balancer for fast failover.
+- **A long DNS TTL on a record you may need to move**: a day-long TTL turns a regional failover into a day of partial outage. Fix: short TTLs on steering records, anycast or a load balancer for fast failover.
 - **Unbounded connections**: no pool limits, no timeouts, so one slow dependency holds every thread. Fix: pools with caps, connect and read timeouts, a connection proxy in front of the database.
 
 !!! warning "Common mistake"
-    Proposing 0-RTT resumption for every request to shave a round trip. Early data can be replayed by anyone on the path, so a 0-RTT `POST /payments` can be charged twice; only idempotent requests may ride in the first flight, and a candidate who knows that shows they understand what the round trip was buying.
+    Proposing 0-RTT resumption for every request to shave a round trip. Early data can be replayed by anyone on the path, so a 0-RTT `POST /payments` can be charged twice; only idempotent requests may ride in the first flight.
 
 ## Self-check
 
 ??? question "How many round trips does a fresh HTTPS request cost with TLS 1.2, TLS 1.3 and QUIC, and what is that cross-region?"
-    TCP plus two TLS round trips for 1.2 (three, ~450 ms at 150 ms each), TCP plus one for 1.3 (two, ~300 ms), one for QUIC (~150 ms); 0-RTT resumption puts the request in the first flight.
+    TCP plus two TLS round trips for 1.2 (three, ~450 ms at 150 ms each), TCP plus one for 1.3 (two, ~300 ms), one for QUIC (~150 ms); 0-RTT rides in the first flight.
 
 ??? question "What does GeoDNS get wrong, and what fixes it?"
-    It sees the resolver's location, not the user's, so a user on a distant public resolver is sent to the wrong region. Anycast routes by network topology, and client-side latency measurements can pick the region directly.
+    It sees the resolver's location, not the user's, so a user on a distant public resolver lands in the wrong region. Anycast routes by network topology; client-side latency measurement picks the region.
 
 ??? question "When is short polling the right realtime transport?"
-    When updates arrive every minute or slower, or when the client and proxies cannot hold connections: it is stateless and cacheable, and its only cost is empty responses, which you size like any other QPS.
+    When updates arrive every minute or slower, or clients and proxies cannot hold connections: stateless, cacheable, and its only cost is empty responses, which you size like any other QPS.
 
 ??? question "What must a design add when it introduces WebSocket?"
-    A session registry of which node holds each connection, pub/sub routing between nodes, heartbeats to detect dead clients, a fallback to long polling, and a deploy process that drains connections.
+    A session registry of which node holds each connection, pub/sub routing between nodes, heartbeats, a long-polling fallback, and a deploy process that drains connections.
 
 ??? question "Which protobuf changes are safe, and which break consumers?"
-    Safe: adding fields with new numbers and defaults, deprecating fields without reusing their numbers. Breaking: renumbering or reusing a field, changing a field's type, making a field required.
+    Safe: adding fields with new numbers and defaults, deprecating fields without reusing their numbers. Breaking: renumbering or reusing a field, changing its type, making a field required.
 
 ## Related
 
