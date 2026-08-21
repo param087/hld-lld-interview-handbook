@@ -225,9 +225,11 @@ nav:
           - Design a parking lot: lld/problems/parking-lot.md
           - Design an elevator system: lld/problems/elevator-system.md
           - Design an in-memory cache (LRU, LFU, TTL): lld/problems/in-memory-cache.md
+          - Design a rate limiter (LLD): lld/problems/rate-limiter-lld.md
           - Design tic-tac-toe (an extensible board game): lld/problems/tic-tac-toe.md
           - Design Splitwise: lld/problems/splitwise.md
           - Design a movie ticket booking system (BookMyShow): lld/problems/movie-ticket-booking.md
+          - Design a hotel management system: lld/problems/hotel-management.md
   - Cheatsheets:
       - cheatsheets/index.md
       - Latency numbers and estimation tables: cheatsheets/latency-and-estimation.md
